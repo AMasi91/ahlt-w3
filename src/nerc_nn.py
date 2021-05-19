@@ -1,4 +1,4 @@
-import numpy as np
+from src.utils.data_generator import DatasetGenerator
 
 
 def learn(train_dir, val_dir, model_name):
@@ -8,20 +8,20 @@ def learn(train_dir, val_dir, model_name):
     # load train and validation data in a suitable form
     train_data = load_data(train_dir)
     val_data = load_data(val_dir)
-    # create indexes from training data
-    max_len = 100
-    indexes = create_indexes(train_data, max_len)
-    # build network
-    model = build_network(indexes)
-    # encode datasets
-    X_train = encode_words(train_data, indexes)
-    y_train = encode_labels(train_data, indexes)
-    X_val = encode_words(val_data, indexes)
-    y_val = encode_labels(val_data, indexes)
-    # train model
-    # TODO model.fit(X_train, y_train, validation_data=(X_val, y_val))
-    # save model and indexs, for later use in prediction
-    save_model_and_indexes(model, indexes, model_name)
+    # # create indexes from training data
+    # max_len = 100
+    # indexes = create_indexes(train_data, max_len)
+    # # build network
+    # model = build_network(indexes)
+    # # encode datasets
+    # X_train = encode_words(train_data, indexes)
+    # y_train = encode_labels(train_data, indexes)
+    # X_val = encode_words(val_data, indexes)
+    # y_val = encode_labels(val_data, indexes)
+    # # train model
+    # # TODO model.fit(X_train, y_train, validation_data=(X_val, y_val))
+    # # save model and indexs, for later use in prediction
+    # save_model_and_indexes(model, indexes, model_name)
 
 
 def predict(model_name, data_dir, out_file) :
@@ -62,8 +62,11 @@ def load_data(data_dir):
     (’should’,19,24,’O’), ...,(’differin’,130,137,’B-brand’), (’gel’,139, 141,’O’), (’.’,142,142,’O’)],
     ...}
     """
-    # TODO Use XML parsing and tokenization functions from previous exercises
-    pass
+    dg = DatasetGenerator(split_path=data_dir)
+    return dg.get_dataset_split()
+
+
+
 
 
 def create_indexes(train_data, max_len):

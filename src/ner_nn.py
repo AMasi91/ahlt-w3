@@ -52,8 +52,8 @@ def predict(model_name, data_dir):
 
     # TODO finish next part
     out_file_path = f'../results/results_{model_name}.txt'
-    # output_entities(test_data, pred_labels, out_file_path)
-    # evaluation(data_dir, out_file_path)
+    output_entities(test_data, pred_labels, out_file_path)
+    evaluation(data_dir, out_file_path)
 
 
 def load_data(data_dir):
@@ -181,25 +181,51 @@ def output_entities(test_data, pred_labels, out_file_path):
     prints the detected entities to stdout in the format required by the
     evaluator.
     Example:
-    output\_entities(dataset , preds)
+    output_entities(dataset , preds)
     DDI-DrugBank.d283.s4|14-35|bile acid sequestrants|group
     DDI-DrugBank.d283.s4|99-104|tricor|group
     DDI-DrugBank.d283.s5|22-33|cyclosporine|drug
     DDI-DrugBank.d283.s5|196-208|fibrate drugs|group
     """
     # TODO Note: Most of this function can be reused from NER-ML exercise.
-    pass
-    # out_file = open(out_file_path, "w+")
-    # for i in range(len(self.original_X_val_or_test)):
-    #     sentence_tags = self.y_pred[i]
-    #     sentence_tokens = []
-    #     sid = ""
-    #     for token_features in self.original_X_val_or_test[i]:
-    #         all_features = token_features.split("\t")
-    #         sid = all_features[0]
-    #         token = all_features[1]
-    #         sentence_tokens.append((token, all_features[2], all_features[3]))
-    #     self.output_entities(sid, sentence_tokens, sentence_tags, out_file)
+    out_file = open(out_file_path, "w+")
+    for sentence_index, (sid, features) in enumerate(test_data.items()):
+        tags = pred_labels[sentence_index][:len(features)]
+        translate_BIO_to_NE(sid, features, tags, out_file)
+
+
+def translate_BIO_to_NE(sid, tokens, tags, out_file):
+    merged_tokens = []
+    first_type_was = None
+    for index, tag in enumerate(tags):
+        if tag != 'O':
+            tag_splitted = tag.split('-')
+            bio_tag = tag_splitted[0]
+            entity_type = tag_splitted[1]
+            first_type_was = entity_type
+        else:
+            bio_tag = 'O'
+            entity_type = None
+        if bio_tag == 'B':
+            if merged_tokens:
+                print(
+                    f"{sid}|{merged_tokens[0][1]}-{merged_tokens[-1][2]}|{' '.join([element[0] for element in merged_tokens])}|{entity_type}", file=out_file)
+                merged_tokens = []
+            merged_tokens.append(tokens[index])
+            first_type_was = entity_type
+
+        elif bio_tag == 'O':
+            if merged_tokens and first_type_was is not None:
+                print(
+                    f"{sid}|{merged_tokens[0][1]}-{merged_tokens[-1][2]}|{' '.join([element[0] for element in merged_tokens])}|{first_type_was}", file=out_file)
+                merged_tokens = []
+
+            elif merged_tokens and first_type_was is None:
+                print(
+                    f"{sid}|{merged_tokens[0][1]}-{merged_tokens[-1][2]}|{' '.join([element[0] for element in merged_tokens])}|{first_type_was}")
+                break
+        else:
+            merged_tokens.append(tokens[index])
 
 
 def evaluation(data_dir, out_file_path):

@@ -8,9 +8,10 @@ from src.utils.utility import print_sentences_len_hist
 import numpy as np
 import json
 from eval import evaluator
+from sklearn.metrics import classification_report
 
 
-def learn(train_dir, val_dir, model_name):
+def learn(train_dir, val_dir, model_name=None):
     train_data = load_data(train_dir)
     val_data = load_data(val_dir)
 
@@ -50,8 +51,11 @@ def predict(model_name, data_dir):
     # get most likely tag for each word
     pred_labels = y_pred_to_labels(y_pred, indexes)
 
-    # TODO finish next part
     out_file_path = f'../results/results_{model_name}.txt'
+
+    # y_true = encode_labels(test_data, indexes)
+    # y_true = y_pred_to_labels(y_true, indexes)
+
     output_entities(test_data, pred_labels, out_file_path)
     evaluation(data_dir, out_file_path)
 
@@ -75,6 +79,7 @@ def create_indexes(train_data, max_len=100):
             if word not in word_dict:
                 word_dict[word] = word_index
                 word_index += 1
+    # TODO create pos tag index
     return index_dict
 
 
@@ -170,27 +175,9 @@ def y_pred_to_labels(pred, indexes):
 
 
 def output_entities(test_data, pred_labels, out_file_path):
-    """
-    Task: Output detected entities in the format expected by the evaluator
-    Input:
-    dataset: A dataset produced by load_data.
-    preds: For each sentence in dataset, a list with the labels for each
-    sentence token ,
-    as predicted by the model
-    Output:
-    prints the detected entities to stdout in the format required by the
-    evaluator.
-    Example:
-    output_entities(dataset , preds)
-    DDI-DrugBank.d283.s4|14-35|bile acid sequestrants|group
-    DDI-DrugBank.d283.s4|99-104|tricor|group
-    DDI-DrugBank.d283.s5|22-33|cyclosporine|drug
-    DDI-DrugBank.d283.s5|196-208|fibrate drugs|group
-    """
-    # TODO Note: Most of this function can be reused from NER-ML exercise.
     out_file = open(out_file_path, "w+")
     for sentence_index, (sid, features) in enumerate(test_data.items()):
-        tags = pred_labels[sentence_index][:len(features)]
+        tags = pred_labels[sentence_index][:len(features)]  # we remove the padding
         translate_BIO_to_NE(sid, features, tags, out_file)
 
 

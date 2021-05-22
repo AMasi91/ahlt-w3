@@ -16,9 +16,9 @@ def learn(train_dir, val_dir, model_name=None):
     val_data = load_data(val_dir)
 
     # TODO in the next line --> calculate the max len between all sentences:
-    # max_len = max(len(value) for value in train_data.values())
+    #max_len = max(len(value) for value in train_data.values())
     # TODO in the next line --> print a useful histogram of sentences length:
-    # print_sentences_len_hist(train_data.values(), show_max=75)
+    #print_sentences_len_hist(train_data.values(), show_max=75)
 
     indexes = create_indexes(train_data, max_len=75)
 
@@ -35,7 +35,7 @@ def learn(train_dir, val_dir, model_name=None):
     epochs = 8
     patience = 1
     es = EarlyStopping(monitor='val_loss', min_delta=0, patience=patience, verbose=1, mode='auto')
-    mc = ModelCheckpoint(f'../saved_models/mc_{model_name}.h5', monitor='val_loss', verbose=1, save_best_only=True, mode='auto')
+    mc = ModelCheckpoint(f'../saved_models/testmc_{model_name}.h5', monitor='val_loss', verbose=1, save_best_only=True, mode='auto')
     model.fit(X_train, y_train, validation_data=(X_val, y_val), batch_size=batch_size,
               epochs=epochs,
               callbacks=[es, mc],
@@ -67,8 +67,8 @@ def load_data(data_dir):
 
 def create_indexes(train_data, max_len=100):
     index_dict = {'words': {'<PAD>': 0, '<UNK>': 1},
-                  'labels': {'<PAD>': 0, 'O': 1, 'B-drug ': 2, 'I-drug ': 3,
-                        'B-group': 4, 'I-group ': 5,  'B-brand ': 6, 'I-brand ': 7,
+                  'labels': {'<PAD>': 0, 'O': 1, 'B-drug': 2, 'I-drug': 3,
+                        'B-group': 4, 'I-group': 5,  'B-brand': 6, 'I-brand': 7,
                         'B-drug_n': 8, 'I-drug_n': 9},
                   'maxLen': max_len}
     word_index = 2
@@ -135,7 +135,7 @@ def encode_labels(split_data, indexes):
                 label = instance[3]
                 if label in label_dict:
                     encoded_sentence_labels.append(label_dict[label])
-                else:  # 'O': 1 #TODO is this correct?
+                else:  # 'O': 1 # is this correct? Fixed. Now it does not enter. TODO: delete this when finished
                     encoded_sentence_labels.append(1)
             else:
                 break

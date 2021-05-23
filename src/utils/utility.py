@@ -1,5 +1,8 @@
 from nltk.tokenize import word_tokenize
+import numpy as np
+import matplotlib
 import matplotlib.pyplot as plt
+matplotlib.use('Agg')
 
 
 def tokenize(sentence_text):
@@ -27,3 +30,34 @@ def print_sentences_len_hist(split, show_max=None):
     plt.xlabel('N° words')
     plt.ylabel('Frequency')
     plt.show()
+
+
+# Plot the training and validation loss + accuracy
+def plot_training(history, model_name):
+    epochs = range(1, len(history.history['accuracy']) + 1)
+    min_index = np.argmin(history.history['val_loss'])
+    min_value = history.history['val_loss'][min_index]
+    correspondent_val_acc = history.history['val_accuracy'][min_index]
+
+    # Accuracy plot
+    plt.plot(epochs, history.history['accuracy'], '-o')
+    plt.plot(epochs, history.history['val_accuracy'], '-o')
+    plt.plot(min_index+1, correspondent_val_acc, 'rx', label=f'{correspondent_val_acc}', markersize=12)
+    plt.title('Model accuracy')
+    plt.ylabel('Accuracy')
+    plt.xlabel('Epoch')
+    plt.legend(['train', 'val'], loc='best')
+    plt.title('Training and validation accuracy')
+    plt.savefig(f'../saved_models/plots/{model_name}_accuracy.png')
+    plt.close()
+
+    # Loss plot
+    plt.plot(epochs, history.history['loss'],'-o')
+    plt.plot(epochs, history.history['val_loss'],'-o')
+    plt.plot(min_index+1, min_value, 'rx', label=f'{min_value}', markersize=12)
+    plt.title('Model loss')
+    plt.ylabel('Loss')
+    plt.xlabel('Epoch')
+    plt.legend(['train', 'val'], loc='best')
+    plt.title('Training and validation loss')
+    plt.savefig(f'../saved_models/plots/{model_name}_loss.png')

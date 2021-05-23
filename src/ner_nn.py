@@ -3,8 +3,8 @@ from keras.models import Model, Input, load_model
 from keras.initializers import he_normal
 from keras.layers import LSTM, Embedding, Dense, TimeDistributed, Bidirectional
 from keras.utils import to_categorical
-from keras.callbacks import ModelCheckpoint, EarlyStopping
-from src.utils.utility import print_sentences_len_hist
+from keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
+from src.utils.utility import print_sentences_len_hist, plot_training
 import numpy as np
 import json
 from eval import evaluator
@@ -32,14 +32,16 @@ def learn(train_dir, val_dir, model_name=None):
     # TODO note: My pc cannot allow setting steps_per_epochs and validation_steps...
     # Better focus the training of maximizing the reduction of val loss --> better generalization!
     batch_size = 64
-    epochs = 8
-    patience = 1
+    epochs = 32
+    patience = 6
     es = EarlyStopping(monitor='val_loss', min_delta=0, patience=patience, verbose=1, mode='auto')
-    mc = ModelCheckpoint(f'../saved_models/testmc_{model_name}.h5', monitor='val_loss', verbose=1, save_best_only=True, mode='auto')
-    model.fit(X_train, y_train, validation_data=(X_val, y_val), batch_size=batch_size,
+    mc = ModelCheckpoint(f'../saved_models/mc_{model_name}.h5', monitor='val_loss', verbose=1, save_best_only=True, mode='auto')
+    rlr = ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=1, min_lr=0.0001, verbose=1)
+    history = model.fit(X_train, y_train, validation_data=(X_val, y_val), batch_size=batch_size,
               epochs=epochs,
-              callbacks=[es, mc],
+              callbacks=[es, mc, rlr],
               verbose=1)
+    plot_training(history, model_name)
     save_indexes(indexes, model_name)
 
 

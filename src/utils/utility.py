@@ -40,8 +40,8 @@ def plot_training(history, model_name):
     correspondent_val_acc = history.history['val_accuracy'][min_index]
 
     # Accuracy plot
-    plt.plot(epochs, history.history['accuracy'], '-o')
-    plt.plot(epochs, history.history['val_accuracy'], '-o')
+    plt.plot(epochs, history.history['accuracy'], '-o', markersize=6)
+    plt.plot(epochs, history.history['val_accuracy'], '-o', markersize=6)
     plt.plot(min_index+1, correspondent_val_acc, 'rx', label=f'{correspondent_val_acc}', markersize=12)
     plt.title('Model accuracy')
     plt.ylabel('Accuracy')
@@ -52,8 +52,8 @@ def plot_training(history, model_name):
     plt.close()
 
     # Loss plot
-    plt.plot(epochs, history.history['loss'],'-o')
-    plt.plot(epochs, history.history['val_loss'],'-o')
+    plt.plot(epochs, history.history['loss'], '-o', markersize=6)
+    plt.plot(epochs, history.history['val_loss'], '-o', markersize=6)
     plt.plot(min_index+1, min_value, 'rx', label=f'{min_value}', markersize=12)
     plt.title('Model loss')
     plt.ylabel('Loss')

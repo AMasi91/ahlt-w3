@@ -1,6 +1,7 @@
 from src.utils.data_generator import DatasetGenerator
 from keras.models import Model, Input, load_model
 from keras.initializers import he_normal
+from keras import optimizers
 from keras.layers import LSTM, Embedding, Dense, TimeDistributed, Bidirectional
 from keras.utils import to_categorical
 from keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
@@ -22,7 +23,7 @@ def learn(train_dir, val_dir, model_name=None):
 
     indexes = create_indexes(train_data, max_len=75)
 
-    model = build_network(indexes)
+    model = build_network(indexes, learning_rate=0.01)
 
     X_train = encode_words(train_data, indexes)
     y_train = encode_labels(train_data, indexes)
@@ -85,7 +86,7 @@ def create_indexes(train_data, max_len=100):
     return index_dict
 
 
-def build_network(indexes):
+def build_network(indexes, learning_rate=0.001):
     n_words = len(indexes['words'])
     n_labels = len(indexes['labels'])
     max_len = indexes['maxLen']
@@ -96,7 +97,8 @@ def build_network(indexes):
                                kernel_initializer=he_normal()))(model)
     out = TimeDistributed(Dense(n_labels, activation="softmax"))(model)
     model = Model(input, out)
-    model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
+    optimizer = optimizers.Adam(learning_rate=learning_rate)
+    model.compile(optimizer=optimizer, loss="categorical_crossentropy", metrics=["accuracy"])
     return model
 
 

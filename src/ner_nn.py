@@ -1,12 +1,14 @@
-from src.utils.data_generator import DatasetGenerator
+from utils.data_generator import DatasetGenerator
 from keras.models import Model, Input, load_model
 from keras.initializers import he_normal
 from keras.layers import LSTM, Embedding, Dense, TimeDistributed, Bidirectional
 from keras.utils import to_categorical
 from keras.callbacks import ModelCheckpoint, EarlyStopping
-from src.utils.utility import print_sentences_len_hist
+from utils.utility import print_sentences_len_hist
 import numpy as np
+from keras_contrib.layers import CRF
 import json
+from nltk import pos_tag
 from eval import evaluator
 from sklearn.metrics import classification_report
 
@@ -70,6 +72,7 @@ def create_indexes(train_data, max_len=100):
                   'labels': {'<PAD>': 0, 'O': 1, 'B-drug': 2, 'I-drug': 3,
                         'B-group': 4, 'I-group': 5,  'B-brand': 6, 'I-brand': 7,
                         'B-drug_n': 8, 'I-drug_n': 9},
+                  'pos_tags': {},
                   'maxLen': max_len}
     word_index = 2
     word_dict = index_dict['words']
@@ -92,9 +95,13 @@ def build_network(indexes):
     model = Embedding(input_dim=n_words,  output_dim=word_embedding_size, input_length=max_len, mask_zero=True)(input)
     model = Bidirectional(LSTM(units=word_embedding_size, return_sequences=True, recurrent_dropout=0.1, dropout=0.1,
                                kernel_initializer=he_normal()))(model)
-    out = TimeDistributed(Dense(n_labels, activation="softmax"))(model)
+    model = TimeDistributed(Dense(n_labels, activation="relu"))(model)
+
+    crf = CRF(n_labels)  # CRF layer
+    out = crf(model)  # output
     model = Model(input, out)
-    model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
+    model.compile(optimizer="rmsprop", loss="categorical_crossentropy", metrics=["accuracy"])
+    print(model.summary())
     return model
 
 
@@ -103,6 +110,8 @@ def encode_words(split_data, indexes):
     max_len = indexes['maxLen']
     encoded_matrix = []
     for instances_of_a_sentence in split_data.values():
+        pos_tags_of_sentence = pos_tag([token[0] for token in instances_of_a_sentence])
+
         encoded_sentence = []
         for idx, instance in enumerate(instances_of_a_sentence):
             # If the sentence is bigger than max_len we need to cut the sentence

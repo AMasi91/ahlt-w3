@@ -9686,14 +9686,15 @@
     "labels": {
         "<PAD>": 0,
         "O": 1,
-        "B-drug ": 2,
-        "I-drug ": 3,
+        "B-drug": 2,
+        "I-drug": 3,
         "B-group": 4,
-        "I-group ": 5,
-        "B-brand ": 6,
-        "I-brand ": 7,
+        "I-group": 5,
+        "B-brand": 6,
+        "I-brand": 7,
         "B-drug_n": 8,
         "I-drug_n": 9
     },
+    "pos_tags": {},
     "maxLen": 75
 }

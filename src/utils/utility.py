@@ -1,8 +1,6 @@
 from nltk.tokenize import word_tokenize
 import numpy as np
-import matplotlib
 import matplotlib.pyplot as plt
-matplotlib.use('Agg')
 
 
 def tokenize(sentence_text):
@@ -33,7 +31,7 @@ def print_sentences_len_hist(split, show_max=None):
 
 
 # Plot the training and validation loss + accuracy
-def plot_training(history, model_name):
+def plot_training(history, model_name, task):
     epochs = range(1, len(history.history['accuracy']) + 1)
     min_index = np.argmin(history.history['val_loss'])
     min_value = history.history['val_loss'][min_index]
@@ -48,7 +46,7 @@ def plot_training(history, model_name):
     plt.xlabel('Epoch')
     plt.legend(['train', 'val'], loc='best')
     plt.title('Training and validation accuracy')
-    plt.savefig(f'../saved_models/plots/{model_name}_accuracy.png')
+    plt.savefig(f'../saved_models_{task}/plots/{model_name}_accuracy.png')
     plt.close()
 
     # Loss plot
@@ -60,4 +58,4 @@ def plot_training(history, model_name):
     plt.xlabel('Epoch')
     plt.legend(['train', 'val'], loc='best')
     plt.title('Training and validation loss')
-    plt.savefig(f'../saved_models/plots/{model_name}_loss.png')
+    plt.savefig(f'../saved_models_{task}/plots/{model_name}_loss.png')

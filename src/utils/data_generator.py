@@ -2,10 +2,15 @@ from os import listdir
 from xml.dom.minidom import parse
 import os.path
 from src.utils import utility as util
+from nltk import pos_tag
+from nltk.stem import WordNetLemmatizer
+from nltk.corpus import wordnet as wn
+import nltk
+nltk.download('wordnet')
 
 
-def generate_output_path(path: str) -> str:
-    out_file_path = "../data/processed/"
+def generate_output_path(path: str, task) -> str:
+    out_file_path = f"../data/processed_{task}/"
     if "train" in path:
         out_file_path += "train"
     elif "devel" in path:
@@ -17,14 +22,18 @@ def generate_output_path(path: str) -> str:
 
 
 class DatasetGenerator:
-    def __init__(self, split_path):
+    def __init__(self, split_path, task):
         self.split_path = split_path
-        self.out_path_dict = generate_output_path(self.split_path)
+        self.task = task
+        self.out_path_dict = generate_output_path(self.split_path, task)
 
     def get_dataset_split(self) -> dict:
-        return self._read_file()
+        if self.task == 'ner':
+            return self._read_file_ner()
+        else:
+            return self._read_file_ddi()
 
-    def _read_file(self) -> dict:
+    def _read_file_ner(self) -> dict:
         out_file_path = self.out_path_dict
         if os.path.isfile(out_file_path):
             print("File found. Reading...")
@@ -40,13 +49,14 @@ class DatasetGenerator:
             return dataset
         else:
             print("File not found.")
-            self._generate_dataset()
-
-    def _generate_dataset(self) -> dict:
+            if self.task == 'ner':
+                self._generate_dataset_ner()
+            else:
+                self._generate_dataset_ddi()
+    
+    def _generate_dataset_ner(self) -> dict:
         print("Generating dataset...")
         data_dir = self.split_path
-        list_dir = listdir(data_dir)
-        list_dir.sort()
         dataset = {}
         # process each file in directory
         with open(self.out_path_dict, "w+") as file:
@@ -79,7 +89,7 @@ class DatasetGenerator:
                         print(sid + '\t' + format, file=file)
                         sentence_instances.append(format)
                     dataset[sid] = sentence_instances
-        return self._read_file()
+        return self._read_file_ner()
 
     def _get_tag(self, param, gold_list):
         tag = "O"
@@ -95,3 +105,102 @@ class DatasetGenerator:
                 tag = tag_dict.get(abs(start - gold_tag[0]), "I") + "-" + gold_tag[2]
                 return tag
         return tag
+
+    def _generate_dataset_ddi(self):
+        print("Generating dataset...")
+        data_dir = self.split_path
+        dataset = []
+        with open(self.out_path_dict, "w+") as file:
+            index = 0
+            list_dir = listdir(data_dir)
+            number_of_files = len(list_dir)
+            # process each file in directory
+            for f in list_dir:
+                # parse XML file, obtaining a DOM tree
+                tree = parse(data_dir + "/" + f)
+                # process each sentence in the file
+                sentences = tree.getElementsByTagName("sentence")
+                for s in sentences:
+                    sid = s.attributes["id"].value  # get sentence id
+                    # get sentence text # load sentence ground truth entities
+                    sentence_text = s.attributes["text"].value
+                    entities = {}
+                    ents = s.getElementsByTagName("entity")
+                    for e in ents:
+                        id = e.attributes["id"].value
+                        entity_text = e.attributes["text"].value
+                        # analyze sentence if there is at least a pair of entities
+                        entities[id] = (entity_text, e.attributes["charOffset"].value.split("-"))
+                    if len(entities) > 1:
+                        tokens = util.tokenize(sentence_text)
+                        tokens_plus_info = self._add_pos_and_lemmas(tokens)
+                    # for each pair of entities, decide whether it is DDI and its type
+                    pairs = s.getElementsByTagName("pair")
+                    for p in pairs:
+                        # get ground truth
+                        ddi = p.attributes["ddi"].value
+                        # target entities
+                        dditype = p.attributes["type"].value if ddi == "true" else "null"
+                        id_e1 = p.attributes["e1"].value
+                        id_e2 = p.attributes["e2"].value
+                        format = id_e1 + "\t" + id_e2 + "\t" + dditype
+                        features = self.prepare_sentence_features(id_e1, id_e2, entities, tokens_plus_info)
+                        dataset.append((sid, id_e1, id_e2, dditype, features))
+                        print(sid, format, "\t".join(features), sep="\t", file=file)
+                index += 1
+                print("{:.1%}".format(index / number_of_files))
+        return dataset
+
+    def prepare_sentence_features(self, id_e1, id_e2, entities, tokens_plus_info):
+        for token_info in tokens_plus_info:
+            print()
+            #TODO implement this function
+
+    def _add_pos_and_lemmas(self, tokens):
+        just_tokens = [t for t, start, end in tokens]
+        token_pos_tag_pairs = pos_tag(just_tokens)
+        sentence_lemmas = [self._extract_lemma(pair) for pair in token_pos_tag_pairs]
+        result = []
+        for index in range(len(tokens)):
+            word, start, end = tokens[index]
+            pos = token_pos_tag_pairs[index][1]
+            lemma = sentence_lemmas[index]
+            result.append((word, start, end, pos, lemma))
+        return result
+
+    def _extract_lemma(self, word_and_tag):
+        wnl = WordNetLemmatizer()
+        tag = word_and_tag[1][:2]
+        if tag == 'NN':
+            return wnl.lemmatize(word_and_tag[0], wn.NOUN)
+        elif tag == 'VB':
+            return wnl.lemmatize(word_and_tag[0], wn.VERB)
+        elif tag == 'JJ':
+            return wnl.lemmatize(word_and_tag[0], wn.ADJ)
+        elif tag == 'RB':
+            return wnl.lemmatize(word_and_tag[0], wn.ADV)
+        return word_and_tag[0]
+
+
+
+    def _read_file_ddi(self) -> list:
+        # TODO modify this function to read the result file of ddi
+        out_file_path = self.out_path_dict
+        if os.path.isfile(out_file_path):
+            print("File found. Reading...")
+            with open(out_file_path, "r") as file:
+                dataset = {}
+                for line in file:
+                    content = line.splitlines()[0]
+                    if content != "":
+                        sid, word, s_offset, e_offset, tag = content.split('\t')
+                        if sid not in dataset:
+                            dataset[sid] = []
+                        dataset[sid].append((word, s_offset, e_offset, tag))
+            return dataset
+        else:
+            print("File not found.")
+            if self.task == 'ner':
+                self._generate_dataset_ner()
+            else:
+                self._generate_dataset_ddi()

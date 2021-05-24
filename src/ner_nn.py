@@ -9,7 +9,6 @@ from src.utils.utility import print_sentences_len_hist, plot_training
 import numpy as np
 import json
 from eval import evaluator
-from sklearn.metrics import classification_report
 
 
 def learn(train_dir, val_dir, model_name=None):
@@ -19,11 +18,12 @@ def learn(train_dir, val_dir, model_name=None):
     # TODO in the next line --> calculate the max len between all sentences:
     #max_len = max(len(value) for value in train_data.values())
     # TODO in the next line --> print a useful histogram of sentences length:
-    #print_sentences_len_hist(train_data.values(), show_max=75)
+    print_sentences_len_hist(train_data.values(), show_max=50)
 
-    indexes = create_indexes(train_data, max_len=75)
+    indexes = create_indexes(train_data, max_len=50)
 
-    model = build_network(indexes, learning_rate=0.01)
+    optimizer = optimizers.Adam(learning_rate=0.01)
+    model = build_network(indexes, optimizer)
 
     X_train = encode_words(train_data, indexes)
     y_train = encode_labels(train_data, indexes)
@@ -33,11 +33,11 @@ def learn(train_dir, val_dir, model_name=None):
     # TODO note: My pc cannot allow setting steps_per_epochs and validation_steps...
     # Better focus the training of maximizing the reduction of val loss --> better generalization!
     batch_size = 64
-    epochs = 32
-    patience = 6
+    epochs = 16
+    patience = 3
     es = EarlyStopping(monitor='val_loss', min_delta=0, patience=patience, verbose=1, mode='auto')
     mc = ModelCheckpoint(f'../saved_models/mc_{model_name}.h5', monitor='val_loss', verbose=1, save_best_only=True, mode='auto')
-    rlr = ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=1, min_lr=0.0001, verbose=1)
+    rlr = ReduceLROnPlateau(monitor="val_loss", factor=0.7, patience=1, min_lr=0.001, verbose=1)
     history = model.fit(X_train, y_train, validation_data=(X_val, y_val), batch_size=batch_size,
               epochs=epochs,
               callbacks=[es, mc, rlr],
@@ -86,18 +86,22 @@ def create_indexes(train_data, max_len=100):
     return index_dict
 
 
-def build_network(indexes, learning_rate=0.001):
+def build_network(indexes, optimizer):
     n_words = len(indexes['words'])
     n_labels = len(indexes['labels'])
     max_len = indexes['maxLen']
-    word_embedding_size = max_len + int(max_len*0.1)  # max sentence len + 10%
+    word_embedding_size = max_len - int(max_len*0.1)  # max sentence len + 10%
     input = Input(shape=(max_len,))
     model = Embedding(input_dim=n_words,  output_dim=word_embedding_size, input_length=max_len, mask_zero=True)(input)
     model = Bidirectional(LSTM(units=word_embedding_size, return_sequences=True, recurrent_dropout=0.1, dropout=0.1,
                                kernel_initializer=he_normal()))(model)
+    # model = LSTM(units=word_embedding_size * 2,
+    #              return_sequences=True,
+    #              dropout=0.1,
+    #              recurrent_dropout=0.1,
+    #              kernel_initializer=he_normal())(model)
     out = TimeDistributed(Dense(n_labels, activation="softmax"))(model)
     model = Model(input, out)
-    optimizer = optimizers.Adam(learning_rate=learning_rate)
     model.compile(optimizer=optimizer, loss="categorical_crossentropy", metrics=["accuracy"])
     return model
 

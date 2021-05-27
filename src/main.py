@@ -1,4 +1,4 @@
-import ner_nn
+from src import ner_nn, ddi_nn
 
 
 if __name__ == '__main__':

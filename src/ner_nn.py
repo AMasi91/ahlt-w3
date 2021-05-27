@@ -1,16 +1,16 @@
 from utils.data_generator import DatasetGenerator
 from keras.models import Model, Input, load_model
 from keras.initializers import he_normal
+from keras import optimizers
 from keras.layers import LSTM, Embedding, Dense, TimeDistributed, Bidirectional
 from keras.utils import to_categorical
-from keras.callbacks import ModelCheckpoint, EarlyStopping
-from utils.utility import print_sentences_len_hist
+from keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
+from src.utils.utility import print_sentences_len_hist, plot_training
 import numpy as np
 from keras_contrib.layers import CRF
 import json
 from nltk import pos_tag
 from eval import evaluator
-from sklearn.metrics import classification_report
 
 
 def learn(train_dir, val_dir, model_name=None):
@@ -18,13 +18,14 @@ def learn(train_dir, val_dir, model_name=None):
     val_data = load_data(val_dir)
 
     # TODO in the next line --> calculate the max len between all sentences:
-    #max_len = max(len(value) for value in train_data.values())
+    # max_len = max(len(value) for value in train_data.values())
     # TODO in the next line --> print a useful histogram of sentences length:
-    #print_sentences_len_hist(train_data.values(), show_max=75)
+    # print_sentences_len_hist(train_data.values(), show_max=75)
 
     indexes = create_indexes(train_data, max_len=75)
 
-    model = build_network(indexes)
+    optimizer = optimizers.Adam(learning_rate=0.01)
+    model = build_network(indexes, optimizer)
 
     X_train = encode_words(train_data, indexes)
     y_train = encode_labels(train_data, indexes)
@@ -34,14 +35,16 @@ def learn(train_dir, val_dir, model_name=None):
     # TODO note: My pc cannot allow setting steps_per_epochs and validation_steps...
     # Better focus the training of maximizing the reduction of val loss --> better generalization!
     batch_size = 64
-    epochs = 8
-    patience = 1
+    epochs = 16
+    patience = 3
     es = EarlyStopping(monitor='val_loss', min_delta=0, patience=patience, verbose=1, mode='auto')
-    mc = ModelCheckpoint(f'../saved_models/testmc_{model_name}.h5', monitor='val_loss', verbose=1, save_best_only=True, mode='auto')
-    model.fit(X_train, y_train, validation_data=(X_val, y_val), batch_size=batch_size,
+    mc = ModelCheckpoint(f'../saved_models_ner/mc_{model_name}.h5', monitor='val_loss', verbose=1, save_best_only=True, mode='auto')
+    rlr = ReduceLROnPlateau(monitor="val_loss", factor=0.7, patience=1, min_lr=0.001, verbose=1)
+    history = model.fit(X_train, y_train, validation_data=(X_val, y_val), batch_size=batch_size,
               epochs=epochs,
-              callbacks=[es, mc],
+              callbacks=[es, mc, rlr],
               verbose=1)
+    plot_training(history, model_name, task='ner')
     save_indexes(indexes, model_name)
 
 
@@ -53,17 +56,13 @@ def predict(model_name, data_dir):
     # get most likely tag for each word
     pred_labels = y_pred_to_labels(y_pred, indexes)
 
-    out_file_path = f'../results/results_{model_name}.txt'
-
-    # y_true = encode_labels(test_data, indexes)
-    # y_true = y_pred_to_labels(y_true, indexes)
-
+    out_file_path = f'../results_ner/results_{model_name}.txt'
     output_entities(test_data, pred_labels, out_file_path)
     evaluation(data_dir, out_file_path)
 
 
 def load_data(data_dir):
-    dg = DatasetGenerator(split_path=data_dir)
+    dg = DatasetGenerator(split_path=data_dir, task='ner')
     return dg.get_dataset_split()
 
 
@@ -82,26 +81,26 @@ def create_indexes(train_data, max_len=100):
             if word not in word_dict:
                 word_dict[word] = word_index
                 word_index += 1
-    # TODO create pos tag index
     return index_dict
 
 
-def build_network(indexes):
+def build_network(indexes, optimizer):
     n_words = len(indexes['words'])
     n_labels = len(indexes['labels'])
     max_len = indexes['maxLen']
-    word_embedding_size = max_len + int(max_len*0.1)  # max sentence len + 10%
+    word_embedding_size = max_len - int(max_len*0.1)  # max sentence len + 10%
     input = Input(shape=(max_len,))
     model = Embedding(input_dim=n_words,  output_dim=word_embedding_size, input_length=max_len, mask_zero=True)(input)
     model = Bidirectional(LSTM(units=word_embedding_size, return_sequences=True, recurrent_dropout=0.1, dropout=0.1,
                                kernel_initializer=he_normal()))(model)
-    model = TimeDistributed(Dense(n_labels, activation="relu"))(model)
-
-    crf = CRF(n_labels)  # CRF layer
-    out = crf(model)  # output
+    # model = LSTM(units=word_embedding_size * 2,
+    #              return_sequences=True,
+    #              dropout=0.1,
+    #              recurrent_dropout=0.1,
+    #              kernel_initializer=he_normal())(model)
+    out = TimeDistributed(Dense(n_labels, activation="softmax"))(model)
     model = Model(input, out)
-    model.compile(optimizer="rmsprop", loss="categorical_crossentropy", metrics=["accuracy"])
-    print(model.summary())
+    model.compile(optimizer=optimizer, loss="categorical_crossentropy", metrics=["accuracy"])
     return model
 
 
@@ -160,14 +159,14 @@ def encode_labels(split_data, indexes):
 
 
 def save_indexes(indexes, model_name):
-    with open(f'../saved_models/encoding_{model_name}.json', 'w') as fp:
+    with open(f'../saved_models_ner/encoding_{model_name}.json', 'w') as fp:
         json.dump(indexes, fp, indent=4)
 
 
 def load_model_and_indexes(model_name):
-    with open(f'../saved_models/encoding_{model_name}.json', 'r') as fp:
+    with open(f'../saved_models_ner/encoding_{model_name}.json', 'r') as fp:
         indexes = json.load(fp)
-    model = load_model(f'../saved_models/mc_{model_name}.h5')
+    model = load_model(f'../saved_models_ner/mc_{model_name}.h5')
     return model, indexes
 
 

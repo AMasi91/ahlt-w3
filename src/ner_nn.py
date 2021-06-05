@@ -14,6 +14,7 @@ import numpy as np
 import json
 from nltk.corpus import stopwords as stopwords
 from eval import evaluator
+from nltk import pos_tag
 
 
 # Define global attributes
@@ -35,11 +36,13 @@ def learn(train_dir, val_dir, model_name=None):
     model = build_network(indexes, optimizer)
 
     prefixes_encoded, suffixes_encoded = encode_affixes(train_data, indexes)
-    X_train = [encode_words(train_data, indexes),prefixes_encoded,suffixes_encoded]
+    pos_encoded = encode_postags(train_data, indexes)
+    X_train = [encode_words(train_data, indexes),prefixes_encoded,suffixes_encoded, pos_encoded]
     y_train = encode_labels(train_data, indexes)
 
     prefixes_encoded, suffixes_encoded = encode_affixes(val_data, indexes)
-    X_val = [encode_words(val_data, indexes),prefixes_encoded,suffixes_encoded]
+    pos_encoded = encode_postags(val_data, indexes)
+    X_val = [encode_words(val_data, indexes),prefixes_encoded,suffixes_encoded,pos_encoded]
     y_val = encode_labels(val_data, indexes)
 
 
@@ -55,6 +58,7 @@ def learn(train_dir, val_dir, model_name=None):
               epochs=epochs,
               callbacks=[es, mc, rlr],
               verbose=1)
+    print(model.metrics_names)
     plot_training(history, model_name, task='ner')
     save_indexes(indexes, model_name)
 
@@ -64,8 +68,9 @@ def predict(model_name, data_dir):
     test_data = load_data(data_dir)
     encoded_words = encode_words(test_data, indexes)
     encoded_preffixes, encoded_suffixes = encode_affixes(test_data, indexes)
+    pos_encoded = encode_postags(test_data, indexes)
 
-    X_test = [encoded_words, encoded_preffixes, encoded_suffixes]
+    X_test = [encoded_words, encoded_preffixes, encoded_suffixes,pos_encoded ]
     y_pred = model.predict(X_test, verbose=1)
     # get most likely tag for each word
     pred_labels = y_pred_to_labels(y_pred, indexes)
@@ -87,13 +92,16 @@ def create_indexes(train_data, max_len=100):
                         'B-drug_n': 8, 'I-drug_n': 9},
                   'suffixes': {'<PAD>': 0, '<UNK>':1},
                   'prefixes': {'<PAD>': 0, '<UNK>': 1},
+                  'pos': {'<PAD>': 0, '<UNK>': 1},
                   'maxLen': max_len}
     word_index = 2
     suf_index = 2
     pref_index = 2
+    pos_index = 2
     word_dict = index_dict['words']
     suffix_dict = index_dict['suffixes']
     prefix_dict = index_dict['prefixes']
+    pos_dict = index_dict['pos']
     for instances_of_a_sentence in train_data.values():
         for instance in instances_of_a_sentence:
             word = instance[0]
@@ -113,7 +121,12 @@ def create_indexes(train_data, max_len=100):
                     pref_index += 1
                 #suffix_dict[suffix] = suffix_dict.get(suffix, len(suffix_dict)) + 1
                 #prefix_dict[prefix] = prefix_dict.get(prefix, len(prefix_dict)) + 1
-
+        tokenized_sentence = [w[0] for w in instances_of_a_sentence]
+        tags = [analysis[1] for analysis in pos_tag(tokenized_sentence) if analysis[1].isalpha()]
+        for tag in tags:
+            if tag not in pos_dict:
+                pos_dict[tag] = pos_index
+                pos_index += 1
 
     return index_dict
 
@@ -123,22 +136,27 @@ def build_network(indexes, optimizer):
     n_suff = len(indexes['suffixes'])
     n_pref = len(indexes['prefixes'])
     n_labels = len(indexes['labels'])
+    n_pos = len(indexes['pos'])
+
 
     max_len = indexes['maxLen']
 
     word_embedding_size = max_len - int(max_len*0.1)  # max sentence len + 10%
     suffix_embedding_size = word_embedding_size # for now they have the same length
     prefix_embedding_size = word_embedding_size
+    pos_embedding_size = word_embedding_size
     # 3 input layers, one for each feature
     input_words = Input(shape=(max_len,))
     input_prefixes = Input(shape=(max_len,))
     input_suffixes = Input(shape=(max_len,))
+    input_pos = Input(shape=(max_len,))
     # 3 embeddings (one for each input)
     word_emb = Embedding(input_dim=n_words,  output_dim=word_embedding_size, input_length=max_len, mask_zero=True)(input_words)
     pref_emb = Embedding(input_dim=n_pref, output_dim=prefix_embedding_size, input_length=max_len, mask_zero=True)(input_prefixes)
     suff_emb = Embedding(input_dim=n_suff, output_dim=suffix_embedding_size, input_length=max_len, mask_zero=True)(input_suffixes)
+    pos_emb = Embedding(input_dim=n_pos, output_dim=pos_embedding_size, input_length=max_len, mask_zero=True)(input_pos)
     # concatenate embeddings and feed the biLSTM model
-    model = Concatenate()([word_emb, pref_emb, suff_emb])
+    model = Concatenate()([word_emb, pref_emb, suff_emb,pos_emb])
     model = Bidirectional(LSTM(units=word_embedding_size, return_sequences=True, recurrent_dropout=0.1, dropout=0.1,
                                kernel_initializer=he_normal()))(model)
     # model = LSTM(units=word_embedding_size * 2,
@@ -147,10 +165,33 @@ def build_network(indexes, optimizer):
     #              recurrent_dropout=0.1,
     #              kernel_initializer=he_normal())(model)
     out = TimeDistributed(Dense(n_labels, activation="softmax"))(model)
-    model = Model([input_words, input_prefixes, input_suffixes], out)
+    model = Model([input_words, input_prefixes, input_suffixes, input_pos], out)
     model.compile(optimizer=optimizer, loss="categorical_crossentropy", metrics=["accuracy"])
     return model
 
+def encode_postags(split_data, indexes):
+    pos_dict = indexes['pos']
+    max_len = indexes['maxLen']
+    encoded_matrix = []
+    for instances_of_a_sentence in split_data.values():
+        pos_tags_of_sentence = [analysis[1] for analysis in pos_tag([token[0] for token in instances_of_a_sentence])]
+        encoded_sentence = []
+        for idx, tag in enumerate(pos_tags_of_sentence):
+            # If the sentence is bigger than max_len we need to cut the sentence
+            if idx < max_len:
+                if tag in pos_dict:
+                    encoded_sentence.append(pos_dict[tag])
+                else:  # '<UNK>' : 1
+                    encoded_sentence.append(1)
+            else:
+                break
+        sent_len = len(encoded_sentence)
+        # Check if we need padding
+        if max_len - sent_len > 0:
+            padding = [0] * (max_len - sent_len)
+            encoded_sentence.extend(padding)
+        encoded_matrix.append(encoded_sentence)
+    return np.array(encoded_matrix)
 
 def encode_words(split_data, indexes):
     word_dict = indexes['words']

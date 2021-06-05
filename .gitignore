@@ -16,3 +16,15 @@ src/keras_contrib/wrappers/__pycache__/
 src/keras_contrib/regularizers/__pycache__/
 
 src/keras_contrib/
+
+venv/
+
+venv/*
+
+src/keras_contrib/__pycache__/
+
+src/keras_contrib/*/__pycache__/
+
+src/keras_contrib/*/*/__pycache__/
+
+

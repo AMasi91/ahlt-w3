@@ -1,5 +1,5 @@
 from src.utils.data_generator import DatasetGenerator
-from keras.models import Model, Input, load_model
+from keras.models import Model, load_model, Input
 from keras.initializers import he_normal
 from keras import optimizers
 from keras.layers import LSTM, Embedding, Dense, TimeDistributed, Bidirectional

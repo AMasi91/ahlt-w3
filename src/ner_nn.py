@@ -1,4 +1,4 @@
-from src.utils.data_generator import DatasetGenerator
+from utils.data_generator import DatasetGenerator
 from keras.models import Model, Input, load_model
 from keras.initializers import he_normal
 from keras import optimizers
@@ -8,7 +8,11 @@ from keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 from src.utils.utility import print_sentences_len_hist, plot_training
 import numpy as np
 import json
+from nltk import pos_tag
 from eval import evaluator
+from keras_contrib.layers import CRF
+from keras_contrib.losses import crf_loss
+from keras_contrib.metrics import crf_viterbi_accuracy
 
 
 def learn(train_dir, val_dir, model_name=None):
@@ -23,7 +27,7 @@ def learn(train_dir, val_dir, model_name=None):
     indexes = create_indexes(train_data, max_len=75)
 
     optimizer = optimizers.Adam(learning_rate=0.01)
-    model = build_network(indexes, optimizer)
+    model = build_network_with_CRF(indexes, optimizer)
 
     X_train = encode_words(train_data, indexes)
     y_train = encode_labels(train_data, indexes)
@@ -69,6 +73,7 @@ def create_indexes(train_data, max_len=100):
                   'labels': {'<PAD>': 0, 'O': 1, 'B-drug': 2, 'I-drug': 3,
                         'B-group': 4, 'I-group': 5,  'B-brand': 6, 'I-brand': 7,
                         'B-drug_n': 8, 'I-drug_n': 9},
+                  'pos_tags': {},
                   'maxLen': max_len}
     word_index = 2
     word_dict = index_dict['words']
@@ -90,14 +95,29 @@ def build_network(indexes, optimizer):
     model = Embedding(input_dim=n_words,  output_dim=word_embedding_size, input_length=max_len, mask_zero=True)(input)
     model = Bidirectional(LSTM(units=word_embedding_size, return_sequences=True, recurrent_dropout=0.1, dropout=0.1,
                                kernel_initializer=he_normal()))(model)
-    # model = LSTM(units=word_embedding_size * 2,
-    #              return_sequences=True,
-    #              dropout=0.1,
-    #              recurrent_dropout=0.1,
-    #              kernel_initializer=he_normal())(model)
     out = TimeDistributed(Dense(n_labels, activation="softmax"))(model)
     model = Model(input, out)
     model.compile(optimizer=optimizer, loss="categorical_crossentropy", metrics=["accuracy"])
+    return model
+
+
+def build_network_with_CRF(indexes, optimizer):
+    n_words = len(indexes['words'])
+    n_labels = len(indexes['labels'])
+    max_len = indexes['maxLen']
+    word_embedding_size = max_len - int(max_len*0.1)  # max sentence len + 10%
+    input = Input(shape=(max_len,))
+    # mask_zero = True must de removed from the embedding
+    model = Embedding(input_dim=n_words,  output_dim=word_embedding_size, input_length=max_len)(input)
+    model = Bidirectional(LSTM(units=word_embedding_size, return_sequences=True, recurrent_dropout=0.1, dropout=0.1,
+                               kernel_initializer=he_normal()))(model)
+
+    model = TimeDistributed(Dense(n_labels, activation="relu"))(model)
+    # 'join' (default) or 'marginal'
+    crf = CRF(n_labels, learn_mode='join')
+    out = crf(model)
+    model = Model(input, out)
+    model.compile(optimizer=optimizer, loss=crf_loss, metrics=[crf_viterbi_accuracy])
     return model
 
 
@@ -106,6 +126,8 @@ def encode_words(split_data, indexes):
     max_len = indexes['maxLen']
     encoded_matrix = []
     for instances_of_a_sentence in split_data.values():
+        pos_tags_of_sentence = pos_tag([token[0] for token in instances_of_a_sentence])
+
         encoded_sentence = []
         for idx, instance in enumerate(instances_of_a_sentence):
             # If the sentence is bigger than max_len we need to cut the sentence
@@ -161,7 +183,11 @@ def save_indexes(indexes, model_name):
 def load_model_and_indexes(model_name):
     with open(f'../saved_models_ner/encoding_{model_name}.json', 'r') as fp:
         indexes = json.load(fp)
-    model = load_model(f'../saved_models_ner/mc_{model_name}.h5')
+    try:
+        model = load_model(f'../saved_models_ner/mc_{model_name}.h5')
+    except ValueError:
+        model = load_model(f'../saved_models_ner/mc_{model_name}.h5', custom_objects={'CRF': CRF, 'crf_loss': crf_loss,
+                                                           'crf_viterbi_accuracy': crf_viterbi_accuracy})
     return model, indexes
 
 
@@ -187,8 +213,9 @@ def output_entities(test_data, pred_labels, out_file_path):
 def translate_BIO_to_NE(sid, tokens, tags, out_file):
     merged_tokens = []
     first_type_was = None
+    print(tags)
     for index, tag in enumerate(tags):
-        if tag != 'O':
+        if tag != 'O' and tag != '<PAD>':
             tag_splitted = tag.split('-')
             bio_tag = tag_splitted[0]
             entity_type = tag_splitted[1]

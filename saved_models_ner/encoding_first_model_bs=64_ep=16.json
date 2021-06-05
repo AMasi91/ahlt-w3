@@ -9695,5 +9695,6 @@
         "B-drug_n": 8,
         "I-drug_n": 9
     },
+    "pos_tags": {},
     "maxLen": 75
 }

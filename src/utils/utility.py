@@ -32,14 +32,14 @@ def print_sentences_len_hist(split, show_max=None):
 
 # Plot the training and validation loss + accuracy
 def plot_training(history, model_name, task):
-    epochs = range(1, len(history.history['accuracy']) + 1)
+    epochs = range(1, len(history.history['acc']) + 1)
     min_index = np.argmin(history.history['val_loss'])
     min_value = history.history['val_loss'][min_index]
-    correspondent_val_acc = history.history['val_accuracy'][min_index]
+    correspondent_val_acc = history.history['val_acc'][min_index]
 
     # Accuracy plot
-    plt.plot(epochs, history.history['accuracy'], '-o', markersize=6)
-    plt.plot(epochs, history.history['val_accuracy'], '-o', markersize=6)
+    plt.plot(epochs, history.history['acc'], '-o', markersize=6)
+    plt.plot(epochs, history.history['val_acc'], '-o', markersize=6)
     plt.plot(min_index+1, correspondent_val_acc, 'rx', label=f'{correspondent_val_acc}', markersize=12)
     plt.title('Model accuracy')
     plt.ylabel('Accuracy')

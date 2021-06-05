@@ -1,10 +1,11 @@
 from src.utils.data_generator import DatasetGenerator
-from keras.models import Model, Input, load_model
-from keras.initializers import he_normal
-from keras import optimizers
-from keras.layers import LSTM, Embedding, Dense, TimeDistributed, Bidirectional
-from keras.utils import to_categorical
-from keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
+from tensorflow.keras.models import Model, load_model
+from tensorflow.keras.layers import Input
+from tensorflow.keras.initializers import he_normal
+from tensorflow.keras import optimizers
+from tensorflow.keras.layers import LSTM, Embedding, Dense, TimeDistributed, Bidirectional
+from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 from src.utils.utility import print_sentences_len_hist, plot_training
 import numpy as np
 import json

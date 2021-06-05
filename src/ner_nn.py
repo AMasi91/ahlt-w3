@@ -2,7 +2,7 @@ from utils.data_generator import DatasetGenerator
 from keras.models import Model, Input, load_model
 from keras.initializers import he_normal
 from keras import optimizers
-from keras.layers import LSTM, Embedding, Dense, TimeDistributed, Bidirectional
+from keras.layers import LSTM, Embedding, Dense, TimeDistributed, Bidirectional, Concatenate
 from keras.utils import to_categorical
 from keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 from src.utils.utility import print_sentences_len_hist, plot_training
@@ -33,7 +33,8 @@ def learn(train_dir, val_dir, model_name=None):
     indexes = create_indexes(train_data, max_len=75)
 
     optimizer = optimizers.Adam(learning_rate=0.01)
-    model = build_network_with_CRF(indexes, optimizer)
+    #model = build_network_with_CRF(indexes, optimizer) Only prepared for "word_embedding" input. Not affixes nor pos.
+    model = build_network(indexes,optimizer)
 
     prefixes_encoded, suffixes_encoded = encode_affixes(train_data, indexes)
     pos_encoded = encode_postags(train_data, indexes)

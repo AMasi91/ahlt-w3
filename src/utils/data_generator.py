@@ -1,6 +1,7 @@
 from os import listdir
 from xml.dom.minidom import parse
 import os.path
+import ast
 from src.utils import utility as util
 from nltk import pos_tag
 from nltk.stem import WordNetLemmatizer
@@ -109,7 +110,7 @@ class DatasetGenerator:
     def _generate_dataset_ddi(self):
         print("Generating dataset...")
         data_dir = self.split_path
-        dataset = []
+        dataset = {}
         with open(self.out_path_dict, "w+") as file:
             index = 0
             list_dir = listdir(data_dir)
@@ -145,16 +146,33 @@ class DatasetGenerator:
                         id_e2 = p.attributes["e2"].value
                         format = id_e1 + "\t" + id_e2 + "\t" + dditype
                         features = self.prepare_sentence_features(id_e1, id_e2, entities, tokens_plus_info)
-                        dataset.append((sid, id_e1, id_e2, dditype, features))
-                        print(sid, format, "\t".join(features), sep="\t", file=file)
+                        dataset[sid] = [id_e1, id_e2, dditype, features]
+                        #dataset.append((sid, id_e1, id_e2, dditype, features))
+                        #print(sid, format, "\t".join(str(features)), sep="\t", file=file)
+                        #format = entities[id_e1][0] + "\t" + entities[id_e1][1][0] + "\t" + entities[id_e1][1][1] + "\t" + dditype
+                        print(sid + '\t' + id_e1 + '\t' + id_e2 + '\t' + dditype + '\t' + str(features), file=file)
                 index += 1
                 print("{:.1%}".format(index / number_of_files))
         return dataset
 
-    def prepare_sentence_features(self, id_e1, id_e2, entities, tokens_plus_info):
+    def prepare_sentence_features(self, id_e1, id_e2, entities, tokens_plus_info) -> list:
+        interacting_entities = [entities[id_e1], entities[id_e2]]
+        non_interacting_entities = [entity for entity in entities.values() if entity not in interacting_entities]
+        mask = {0:'<DRUG_OTHER>', 1:'<DRUG1>', 2:'<DRUG2>'}
+        sentence_features = []
+
         for token_info in tokens_plus_info:
-            print()
-            #TODO implement this function
+            entity_token = (token_info[0].split('-')[0],[str(token_info[1]), str(token_info[2])])
+            if entity_token in interacting_entities:
+                index = interacting_entities.index(entity_token)
+                if index == 0:
+                    token_info = (mask[1],token_info[1],token_info[2],mask[1], mask[1])
+                else:
+                    token_info = (mask[2],token_info[1],token_info[2],mask[2], mask[2])
+            elif entity_token in non_interacting_entities:
+                token_info = (mask[0],token_info[1],token_info[2],mask[0], mask[0])
+            sentence_features.append(token_info)
+        return sentence_features
 
     def _add_pos_and_lemmas(self, tokens):
         just_tokens = [t for t, start, end in tokens]
@@ -183,8 +201,7 @@ class DatasetGenerator:
 
 
 
-    def _read_file_ddi(self) -> list:
-        # TODO modify this function to read the result file of ddi
+    def _read_file_ddi(self) -> dict:
         out_file_path = self.out_path_dict
         if os.path.isfile(out_file_path):
             print("File found. Reading...")
@@ -193,14 +210,13 @@ class DatasetGenerator:
                 for line in file:
                     content = line.splitlines()[0]
                     if content != "":
-                        sid, word, s_offset, e_offset, tag = content.split('\t')
+                        sid, id_e1, id_e2, tag, tokenized_sentence = content.split('\t')
                         if sid not in dataset:
-                            dataset[sid] = []
-                        dataset[sid].append((word, s_offset, e_offset, tag))
+                            dataset[sid] = [id_e1, id_e2, tag, ast.literal_eval(tokenized_sentence)]
             return dataset
         else:
             print("File not found.")
             if self.task == 'ner':
-                self._generate_dataset_ner()
+                return self._generate_dataset_ner()
             else:
-                self._generate_dataset_ddi()
+                return self._generate_dataset_ddi()

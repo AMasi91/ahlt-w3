@@ -18,8 +18,8 @@ from keras_contrib.metrics import crf_viterbi_accuracy
 
 
 # Define global attributes
-LEN_AFFIX = 3
 sw = stopwords.words('english')
+
 
 def learn(train_dir, val_dir, model_name=None):
     train_data = load_data(train_dir)
@@ -29,37 +29,34 @@ def learn(train_dir, val_dir, model_name=None):
     # max_len = max(len(value) for value in train_data.values())
     # TODO in the next line --> print a useful histogram of sentences length:
     # print_sentences_len_hist(train_data.values(), show_max=75)
-
-    indexes = create_indexes(train_data, max_len=75)
+    len_affixes = 3
+    indexes = create_indexes(train_data=train_data, max_len=75, len_affixes=len_affixes)
 
     optimizer = optimizers.Adam(learning_rate=0.01)
-    #model = build_network_with_CRF(indexes, optimizer) Only prepared for "word_embedding" input. Not affixes nor pos.
-    model = build_network(indexes,optimizer)
+    # model = build_network_with_CRF(indexes, optimizer) Only prepared for "word_embedding" input. Not affixes nor pos.
+    model = build_network(indexes, optimizer)
 
-    prefixes_encoded, suffixes_encoded = encode_affixes(train_data, indexes)
+    prefixes_encoded, suffixes_encoded = encode_affixes(train_data, indexes, len_affixes)
     pos_encoded = encode_postags(train_data, indexes)
-    X_train = [encode_words(train_data, indexes),prefixes_encoded,suffixes_encoded, pos_encoded]
+    X_train = [encode_words(train_data, indexes), prefixes_encoded, suffixes_encoded, pos_encoded]
     y_train = encode_labels(train_data, indexes)
 
-    prefixes_encoded, suffixes_encoded = encode_affixes(val_data, indexes)
+    prefixes_encoded, suffixes_encoded = encode_affixes(val_data, indexes, len_affixes)
     pos_encoded = encode_postags(val_data, indexes)
-    X_val = [encode_words(val_data, indexes),prefixes_encoded,suffixes_encoded,pos_encoded]
+    X_val = [encode_words(val_data, indexes), prefixes_encoded, suffixes_encoded, pos_encoded]
     y_val = encode_labels(val_data, indexes)
 
-
-    # TODO note: My pc cannot allow setting steps_per_epochs and validation_steps...
-    # Better focus the training of maximizing the reduction of val loss --> better generalization!
     batch_size = 64
     epochs = 16
     patience = 3
     es = EarlyStopping(monitor='val_loss', min_delta=0, patience=patience, verbose=1, mode='auto')
-    mc = ModelCheckpoint(f'../saved_models_ner/mc_{model_name}.h5', monitor='val_loss', verbose=1, save_best_only=True, mode='auto')
-    rlr = ReduceLROnPlateau(monitor="val_loss", factor=0.7, patience=1, min_lr=0.001, verbose=1)
+    mc = ModelCheckpoint(f'../saved_models_ner/mc_{model_name}.h5', monitor='val_loss', verbose=0,
+                         save_best_only=True, mode='auto')
+    rlr = ReduceLROnPlateau(monitor="val_loss", factor=0.7, patience=1, min_lr=0.001, verbose=0)
     history = model.fit(X_train, y_train, validation_data=(X_val, y_val), batch_size=batch_size,
               epochs=epochs,
               callbacks=[es, mc, rlr],
-              verbose=1)
-    print(model.metrics_names)
+              verbose=0)
     plot_training(history, model_name, task='ner')
     save_indexes(indexes, model_name)
 
@@ -68,11 +65,11 @@ def predict(model_name, data_dir):
     model, indexes = load_model_and_indexes(model_name)
     test_data = load_data(data_dir)
     encoded_words = encode_words(test_data, indexes)
-    encoded_preffixes, encoded_suffixes = encode_affixes(test_data, indexes)
+    encoded_prefixes, encoded_suffixes = encode_affixes(test_data, indexes)
     pos_encoded = encode_postags(test_data, indexes)
 
-    X_test = [encoded_words, encoded_preffixes, encoded_suffixes,pos_encoded ]
-    y_pred = model.predict(X_test, verbose=1)
+    X_test = [encoded_words, encoded_prefixes, encoded_suffixes,pos_encoded ]
+    y_pred = model.predict(X_test, verbose=0)
     # get most likely tag for each word
     pred_labels = y_pred_to_labels(y_pred, indexes)
 
@@ -86,7 +83,7 @@ def load_data(data_dir):
     return dg.get_dataset_split()
 
 
-def create_indexes(train_data, max_len=100):
+def create_indexes(train_data, max_len=100, len_affixes=3):
     index_dict = {'words': {'<PAD>': 0, '<UNK>': 1},
                   'labels': {'<PAD>': 0, 'O': 1, 'B-drug': 2, 'I-drug': 3,
                         'B-group': 4, 'I-group': 5,  'B-brand': 6, 'I-brand': 7,
@@ -111,17 +108,15 @@ def create_indexes(train_data, max_len=100):
                 word_index += 1
 
             # get the 3 length suffix/prefix if it is not a stop word.
-            if word not in sw and len(word) > LEN_AFFIX:
-                suffix = word[-LEN_AFFIX:]
-                prefix = word[:LEN_AFFIX]
+            if word not in sw and len(word) > len_affixes:
+                suffix = word[-len_affixes:]
+                prefix = word[:len_affixes]
                 if suffix not in suffix_dict:
                     suffix_dict[suffix] = suf_index
                     suf_index += 1
                 if prefix not in prefix_dict:
                     prefix_dict[prefix] = pref_index
                     pref_index += 1
-                #suffix_dict[suffix] = suffix_dict.get(suffix, len(suffix_dict)) + 1
-                #prefix_dict[prefix] = prefix_dict.get(prefix, len(prefix_dict)) + 1
         tokenized_sentence = [w[0] for w in instances_of_a_sentence]
         tags = [analysis[1] for analysis in pos_tag(tokenized_sentence) if analysis[1].isalpha()]
         for tag in tags:
@@ -139,19 +134,18 @@ def build_network(indexes, optimizer):
     n_labels = len(indexes['labels'])
     n_pos = len(indexes['pos'])
 
-
     max_len = indexes['maxLen']
 
-    word_embedding_size = max_len - int(max_len*0.1)  # max sentence len + 10%
-    suffix_embedding_size = word_embedding_size # for now they have the same length
+    word_embedding_size = max_len - int(max_len*0.1)  # max sentence len - 10%
+    suffix_embedding_size = word_embedding_size # TODO for now they have the same length, change them!
     prefix_embedding_size = word_embedding_size
     pos_embedding_size = word_embedding_size
-    # 3 input layers, one for each feature
+    # 4 input layers, one for each feature
     input_words = Input(shape=(max_len,))
     input_prefixes = Input(shape=(max_len,))
     input_suffixes = Input(shape=(max_len,))
     input_pos = Input(shape=(max_len,))
-    # 3 embeddings (one for each input)
+    # 4 embeddings (one for each input)
     word_emb = Embedding(input_dim=n_words,  output_dim=word_embedding_size, input_length=max_len, mask_zero=True)(input_words)
     pref_emb = Embedding(input_dim=n_pref, output_dim=prefix_embedding_size, input_length=max_len, mask_zero=True)(input_prefixes)
     suff_emb = Embedding(input_dim=n_suff, output_dim=suffix_embedding_size, input_length=max_len, mask_zero=True)(input_suffixes)
@@ -164,6 +158,7 @@ def build_network(indexes, optimizer):
     model = Model([input_words, input_prefixes, input_suffixes, input_pos], out)
     model.compile(optimizer=optimizer, loss="categorical_crossentropy", metrics=["accuracy"])
     return model
+
 
 def encode_postags(split_data, indexes):
     pos_dict = indexes['pos']
@@ -188,6 +183,7 @@ def encode_postags(split_data, indexes):
             encoded_sentence.extend(padding)
         encoded_matrix.append(encoded_sentence)
     return np.array(encoded_matrix)
+
 
 def build_network_with_CRF(indexes, optimizer):
     n_words = len(indexes['words'])
@@ -214,8 +210,6 @@ def encode_words(split_data, indexes):
     max_len = indexes['maxLen']
     encoded_matrix = []
     for instances_of_a_sentence in split_data.values():
-        #pos_tags_of_sentence = pos_tag([token[0] for token in instances_of_a_sentence])
-
         encoded_sentence = []
         for idx, instance in enumerate(instances_of_a_sentence):
             # If the sentence is bigger than max_len we need to cut the sentence
@@ -235,7 +229,8 @@ def encode_words(split_data, indexes):
         encoded_matrix.append(encoded_sentence)
     return np.array(encoded_matrix)
 
-def encode_affixes(split_data, indexes) -> tuple:
+
+def encode_affixes(split_data, indexes, len_affixes=3) -> tuple:
     # load both dictionaries. Instantiate the lists which will contain all the encoded sentences for
     # both prefix and suffix policies.
 
@@ -256,15 +251,14 @@ def encode_affixes(split_data, indexes) -> tuple:
             if idx < max_len:
                 word = instance[0]
                 # words that do not have the required length or are stopwords have <UNK>
-                if len(word) < LEN_AFFIX:
+                if len(word) < len_affixes:
                     encoded_sentence_suf.append(suffix_dict['<UNK>'])
                     encoded_sentence_pref.append(prefix_dict['<UNK>'])
                     continue
 
                 # beyond this point, words are adequate to extract affixes.
-
-                suffix = word[-LEN_AFFIX:]
-                prefix = word[:LEN_AFFIX]
+                suffix = word[-len_affixes:]
+                prefix = word[:len_affixes]
 
                 if suffix in suffix_dict:
                     encoded_sentence_suf.append(suffix_dict[suffix])
@@ -288,11 +282,11 @@ def encode_affixes(split_data, indexes) -> tuple:
             padding = [prefix_dict['<PAD>']] * (max_len - sent_len_pref)
             encoded_sentence_pref.extend(padding)
 
-
         encoded_dataset_suf.append(encoded_sentence_suf)
         encoded_dataset_pre.append(encoded_sentence_pref)
 
-    return (np.array(encoded_dataset_pre), np.array(encoded_dataset_suf))
+    return np.array(encoded_dataset_pre), np.array(encoded_dataset_suf)
+
 
 def encode_labels(split_data, indexes):
     label_dict = indexes['labels']
@@ -359,7 +353,6 @@ def output_entities(test_data, pred_labels, out_file_path):
 def translate_BIO_to_NE(sid, tokens, tags, out_file):
     merged_tokens = []
     first_type_was = None
-    print(tags)
     for index, tag in enumerate(tags):
         if tag != 'O' and tag != '<PAD>':
             tag_splitted = tag.split('-')

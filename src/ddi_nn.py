@@ -119,8 +119,8 @@ def create_indexes(train_data, max_len=100):
         for elem in instances_of_a_sentence:
             if not isinstance(elem,list): continue
             for instance in elem:
-                word = instance[0].lower()
-                lemma = instance[-1].lower()
+                word = instance[0]
+                lemma = instance[-1]
                 if word not in word_dict:
                     word_dict[word] = word_index
                     word_index += 1
@@ -193,12 +193,15 @@ def build_network(indexes, optimizer):
     # concatenate embeddings and feed the convolutional model
     ##################BASIC MODEL#################
     cnn_model = Concatenate()([word_emb, lemma_emb, pos_emb])
-    cnn_model = Conv1D(filters=25, kernel_size=4, activation='relu', padding='valid', kernel_initializer=he_normal())(cnn_model)
+    cnn_model = Conv1D(filters=20, kernel_size=4, activation='relu', padding='valid', kernel_initializer=he_normal())(cnn_model)
+    cnn_model = Conv1D(filters=10, kernel_size=4, activation='relu', padding='valid', kernel_initializer=he_normal())(
+        cnn_model)
+
     #cnn_model = Conv1D(filters=25, kernel_size=4, activation='relu', padding='valid', kernel_initializer=he_normal())(
     #    cnn_model)
-    cnn_model = MaxPooling1D(pool_size=2, strides=None, padding='valid',
-                           input_shape=(max_len, 100))(cnn_model)  # strides=None means strides=pool_size
-    cnn_model = LSTM(units = 40, return_sequences=True, recurrent_dropout=0.1,
+    #cnn_model = MaxPooling1D(pool_size=2, strides=None, padding='valid',
+     #                      input_shape=(max_len, 100))(cnn_model)  # strides=None means strides=pool_size
+    cnn_model = LSTM(units = 20, return_sequences=True, recurrent_dropout=0.1,
                      dropout=0.1, kernel_initializer=he_normal())(cnn_model)
     #cnn_model = LSTM(units=40, return_sequences=True, recurrent_dropout=0.1,
     #                 dropout=0.1, kernel_initializer=he_normal())(cnn_model)
@@ -240,8 +243,8 @@ def encode_words_and_lemmas(split_data, indexes):
         for idx, instance in enumerate(instances_of_a_sentence[3]):
             # If the sentence is bigger than max_len we need to cut the sentence
             if idx < max_len:
-                word = instance[0].lower()
-                lemma = instance[-1].lower()
+                word = instance[0]
+                lemma = instance[-1]
                 if word in word_dict:
                     encoded_sentence_word.append(word_dict[word])
                 else:  # '<UNK>' : 1

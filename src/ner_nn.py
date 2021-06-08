@@ -2,7 +2,7 @@ from utils.data_generator import DatasetGenerator
 from keras.models import Model, Input, load_model
 from keras.initializers import he_normal
 from keras import optimizers
-from keras.layers import LSTM, Embedding, Dense, TimeDistributed, Bidirectional, Concatenate
+from keras.layers import LSTM, concatenate, Embedding, Dense, TimeDistributed, Bidirectional, Concatenate
 from keras.utils import to_categorical
 from keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 from src.utils.utility import print_sentences_len_hist, plot_training
@@ -142,7 +142,7 @@ def build_network(indexes, optimizer):
 
     max_len = indexes['maxLen']
 
-    word_embedding_size = max_len - int(max_len*0.1)  # max sentence len + 10%
+    word_embedding_size = max_len - int(max_len*0.1)  # max sentence len - 10%
     suffix_embedding_size = word_embedding_size # for now they have the same length
     prefix_embedding_size = word_embedding_size
     pos_embedding_size = word_embedding_size

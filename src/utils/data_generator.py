@@ -160,7 +160,7 @@ class DatasetGenerator:
         non_interacting_entities = [entity for entity in entities.values() if entity not in interacting_entities]
         mask = {0:'<DRUG_OTHER>', 1:'<DRUG1>', 2:'<DRUG2>'}
         sentence_features = []
-
+        # TODO: masks now only mask lemma and word. Should pos tag as well? => now masking POS
         for token_info in tokens_plus_info:
             entity_token = (token_info[0].split('-')[0],[str(token_info[1]), str(token_info[2])])
             if entity_token in interacting_entities:

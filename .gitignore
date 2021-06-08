@@ -28,3 +28,5 @@ src/keras_contrib/*/__pycache__/
 src/keras_contrib/*/*/__pycache__/
 
 
+resources/
+resources/*

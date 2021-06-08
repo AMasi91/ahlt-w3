@@ -1,11 +1,11 @@
 from nltk import pos_tag
-
+from keras.initializers import Constant
 from src.utils.data_generator import DatasetGenerator
 from keras.models import Model, load_model, Input
 from keras.initializers import he_normal
 from keras import optimizers, Sequential
 from keras.layers import Conv1D, GlobalMaxPool1D, Embedding, Dense, TimeDistributed, Bidirectional, Concatenate, \
-    Flatten, LSTM
+    Flatten, LSTM, concatenate, MaxPooling1D, Dropout
 from keras.utils import to_categorical
 from keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 from src.utils.utility import print_sentences_len_hist, plot_training
@@ -25,22 +25,32 @@ def learn(train_dir, val_dir, model_name=None):
     # # TODO in the next line --> calculate the max len between all sentences:
     #max_len = max(len(value) for value in train_data.values())
     # # TODO in the next line --> print a useful histogram of sentences length:
-    #print_sentences_len_hist(train_data.values(), show_max=50)
+    #print_sentences_len_hist(train_data.values()[-1], show_max=50)
     #
     indexes = create_indexes(train_data, max_len=75)
     #
     optimizer = optimizers.Adam(learning_rate=0.01)
     model = build_network(indexes, optimizer)
     #
-    X_train = encode_words(train_data, indexes)
+    words_enc,lemmas_enc = encode_words_and_lemmas(train_data, indexes)
+    prefixes_encoded, suffixes_encoded = encode_affixes(train_data, indexes)
+    pos_enc = encode_postags(train_data, indexes)
+    #X_train = [words_enc, lemmas_enc, pos_enc, prefixes_encoded, suffixes_encoded]
     y_train = encode_labels(train_data, indexes)
-    X_val = encode_words(val_data, indexes)
+    X_train = [words_enc,lemmas_enc, pos_enc]
+
+
+    words_enc, lemmas_enc = encode_words_and_lemmas(val_data, indexes)
+    prefixes_encoded, suffixes_encoded = encode_affixes(val_data, indexes)
+    pos_enc = encode_postags(val_data, indexes)
+    #X_val = [words_enc, lemmas_enc, pos_enc, prefixes_encoded, suffixes_encoded]
     y_val = encode_labels(val_data, indexes)
+    X_val = [words_enc, lemmas_enc, pos_enc]
     #
     # # TODO note: My pc cannot allow setting steps_per_epochs and validation_steps...
     # # Better focus the training of maximizing the reduction of val loss --> better generalization!
     batch_size = 64
-    epochs = 16
+    epochs = 10
     patience = 3
     es = EarlyStopping(monitor='val_loss', min_delta=0, patience=patience, verbose=1, mode='auto')
     mc = ModelCheckpoint(f'../saved_models_ddi/mc_{model_name}.h5', monitor='val_loss', verbose=1, save_best_only=True, mode='auto')
@@ -60,8 +70,11 @@ def predict(model_name , data_dir):
     # load  data to  annotate
     test_data = load_data(data_dir)
     # encode  dataset
-    encoded_words = encode_words(test_data, indexes)
-    X_test = encoded_words
+    encoded_words, encoded_lemmas = encode_words_and_lemmas(test_data, indexes)
+    prefixes_encoded, suffixes_encoded = encode_affixes(test_data, indexes)
+    pos_enc = encode_postags(test_data, indexes)
+    #X_test = [encoded_words, encoded_lemmas, pos_enc, prefixes_encoded, suffixes_encoded]
+    X_test = [encoded_words, encoded_lemmas, pos_enc]
     # tag  sentences  in  dataset
     y_pred = model.predict(X_test, verbose=1)
     # get  most  likely  tag  for  each  pair. Recall indexes['labels'] is dict and [np.argmax(y)] a key.
@@ -90,12 +103,15 @@ def create_indexes(train_data, max_len=100):
                   'suffixes': {'<PAD>': 0, '<UNK>':1},
                   'prefixes': {'<PAD>': 0, '<UNK>': 1},
                   'pos': {'<PAD>': 0, '<UNK>': 1},
+                  'lemmas': {'<PAD>': 0, '<UNK>': 1},
                   'maxLen': max_len}
     word_index = 2
+    lemma_index = 2
     suf_index = 2
     pref_index = 2
     pos_index = 2
     word_dict = index_dict['words']
+    lemmas_dict = index_dict['lemmas']
     suffix_dict = index_dict['suffixes']
     prefix_dict = index_dict['prefixes']
     pos_dict = index_dict['pos']
@@ -103,10 +119,14 @@ def create_indexes(train_data, max_len=100):
         for elem in instances_of_a_sentence:
             if not isinstance(elem,list): continue
             for instance in elem:
-                word = instance[0]
+                word = instance[0].lower()
+                lemma = instance[-1].lower()
                 if word not in word_dict:
                     word_dict[word] = word_index
                     word_index += 1
+                if lemma not in lemmas_dict:
+                    lemmas_dict[lemma] = lemma_index
+                    lemma_index += 1
 
                 # get the 3 length suffix/prefix if it is not a stop word.
                 if word not in sw and len(word) > LEN_AFFIX:
@@ -120,7 +140,7 @@ def create_indexes(train_data, max_len=100):
                         pref_index += 1
 
                 tag = instance[3]
-                if tag not in pos_dict:
+                if tag not in pos_dict and tag.isalpha():
                     pos_dict[tag] = pos_index
                     pos_index += 1
 
@@ -128,93 +148,127 @@ def create_indexes(train_data, max_len=100):
 
 def build_network(indexes, optimizer):
     n_words = len(indexes['words'])
-    n_suff = len(indexes['suffixes'])
-    n_pref = len(indexes['prefixes'])
     n_labels = len(indexes['labels'])
     n_pos = len(indexes['pos'])
+    n_lemmas = len(indexes['lemmas'])
+    n_suffixes = len(indexes['suffixes'])
+    n_prefixes = len(indexes['prefixes'])
 
     max_len = indexes['maxLen']
 
-    word_embedding_size = max_len - int(max_len*0.1)  # max sentence len + 10%
-    suffix_embedding_size = word_embedding_size # for now they have the same length
-    prefix_embedding_size = word_embedding_size
-    pos_embedding_size = word_embedding_size
+    word_embedding_size = 150
+    pos_embedding_size = 25
+    lemma_embedding_size = 110
+    prefixes_embedding_size = 200
+    suffixes_embedding_size = 200
+    total_size = word_embedding_size + pos_embedding_size + lemma_embedding_size + 400
 
     # 3 input layers, one for each feature
     input_words = Input(shape=(max_len,))
-    input_prefixes = Input(shape=(max_len,))
-    input_suffixes = Input(shape=(max_len,))
+    input_lemmas = Input(shape=(max_len,))
     input_pos = Input(shape=(max_len,))
+    input_pre = Input(shape=(max_len,))
+    input_suf = Input(shape=(max_len,))
+
 
     # 3 embeddings (one for each input)
-    word_emb = Embedding(input_dim=n_words,  output_dim=word_embedding_size, input_length=max_len)(input_words)
-    pref_emb = Embedding(input_dim=n_pref, output_dim=prefix_embedding_size, input_length=max_len, mask_zero=True)(input_prefixes)
-    suff_emb = Embedding(input_dim=n_suff, output_dim=suffix_embedding_size, input_length=max_len, mask_zero=True)(input_suffixes)
-    pos_emb = Embedding(input_dim=n_pos, output_dim=pos_embedding_size, input_length=max_len, mask_zero=True)(input_pos)
+    emb_word_mat = create_embedding_matrix('../resources/glove.6B.200d.txt', indexes['words'], 150, num_reserved=2)
+    emb_lemma_mat = create_embedding_matrix('../resources/glove.6B.200d.txt', indexes['lemmas'], 110, num_reserved=2)
+    emb_pos_mat = create_embedding_matrix('../resources/glove.6B.50d.txt', indexes['pos'], 25, num_reserved=2)
 
+    word_emb = Embedding(input_dim=n_words, output_dim=word_embedding_size, input_length=max_len)(input_words)
+    lemma_emb = Embedding(input_dim=n_lemmas, output_dim=lemma_embedding_size, input_length=max_len)(input_lemmas)
+    pos_emb = Embedding(input_dim=n_pos, output_dim=pos_embedding_size, input_length=max_len)(input_pos)
+    #pref_emb = Embedding(input_dim=n_prefixes, output_dim=prefixes_embedding_size, input_length=max_len)(input_pre)
+    #suff_emb = Embedding(input_dim=n_suffixes, output_dim=suffixes_embedding_size, input_length=max_len)(input_suf)
+
+    #word_emb = Embedding(input_dim=n_words+2,  output_dim=word_embedding_size, input_length=max_len,
+    #                     embeddings_initializer=Constant(emb_word_mat),trainable=False,)(input_words)
+    #lemma_emb = Embedding(input_dim=n_lemmas+2, output_dim=lemma_embedding_size, input_length=max_len,
+    #                      embeddings_initializer = Constant(emb_lemma_mat), trainable = False,)(input_lemmas)
+    #pos_emb = Embedding(input_dim=n_pos+2, output_dim=pos_embedding_size, input_length=max_len,
+    #                    embeddings_initializer = Constant(emb_pos_mat), trainable = False,)(input_pos)
+    #aux = concatenate([word_emb], [lemma_emb])
+    #cnn_model = concatenate(aux, [pos_emb])
     # concatenate embeddings and feed the convolutional model
-    input = word_emb
-    #cnn_model = Sequential()(input)
-    #model = Concatenate([word_emb, pref_emb, suff_emb,pos_emb])(model)
-    cnn_model = Conv1D(filters=128, kernel_size=5, activation='relu', kernel_initializer=he_normal())(input)
-    #model.add(Conv1D(filters=128, kernel_size=5, activation='relu', kernel_initializer=he_normal()))
-    #model.add(Conv1D(filters=50, kernel_size=5, activation='relu', kernel_initializer=he_normal()))
+    ##################BASIC MODEL#################
+    cnn_model = Concatenate()([word_emb, lemma_emb, pos_emb])
+    cnn_model = Conv1D(filters=25, kernel_size=4, activation='relu', padding='valid', kernel_initializer=he_normal())(cnn_model)
+    #cnn_model = Conv1D(filters=25, kernel_size=4, activation='relu', padding='valid', kernel_initializer=he_normal())(
+    #    cnn_model)
+    cnn_model = MaxPooling1D(pool_size=2, strides=None, padding='valid',
+                           input_shape=(max_len, 100))(cnn_model)  # strides=None means strides=pool_size
+    cnn_model = LSTM(units = 40, return_sequences=True, recurrent_dropout=0.1,
+                     dropout=0.1, kernel_initializer=he_normal())(cnn_model)
+    #cnn_model = LSTM(units=40, return_sequences=True, recurrent_dropout=0.1,
+    #                 dropout=0.1, kernel_initializer=he_normal())(cnn_model)
     cnn_model = GlobalMaxPool1D()(cnn_model)
-    cnn_model = Dense(units=100, activation='relu')(cnn_model)
-    out = Dense(units=n_labels, activation="softmax")(cnn_model)
+    #cnn_model = Dense(units=50, activation='relu')(cnn_model)
+
+    out = Dense(units=n_labels, activation='softmax')(cnn_model)
 
 
-    #input = Embedding(input_dim=n_words,output_dim=word_embedding_size, input_length=max_len)(input_words)
-    #lstm_model = Sequential()(input)
-    #lstm_model = Bidirectional(LSTM(units=word_embedding_size, return_sequences=True, recurrent_dropout=0.1, dropout=0.1,
-    #                           kernel_initializer=he_normal()))(input)
+    cnn_model = Model([input_words, input_lemmas, input_pos], out)
+    #lstm_model = Concatenate()([word_emb, lemma_emb, pos_emb])
+    #lstm_model = LSTM(word_embedding_size, activation='relu', return_sequences=True)(lstm_model)
+    #lstm_model = LSTM(word_embedding_size, activation='relu', return_sequences=True)(lstm_model)
 
-    #merge = Concatenate()([lstm_model, cnn_model])
-    #hidden1 = Dense(units=100, activation='relu')
-    #hidden2 = Dense(units=n_labels, activation="softmax")
-    #conc_model = Sequential()
-    #conc_model.add(merge)
-    #conc_model.add(hidden1)
-    #conc_model.add(hidden2)
+    #lstm_model = LSTM(word_embedding_size, activation='relu', return_sequences=True)(lstm_model)
+    #lstm_model = Flatten()(lstm_model)
 
-    #model = Bidirectional(LSTM(units=word_embedding_size, return_sequences=True, recurrent_dropout=0.1, dropout=0.1,
-    #                           kernel_initializer=he_normal()))(model)
-    #out = TimeDistributed(Dense(n_labels, activation="softmax"))(model)
+    #merge = Concatenate()([cnn_model, lstm_model])
+    #merge = Dense(units=100, activation='relu')(merge)
+    #merge = Dense(units=50, activation='relu')(merge)
+    #out = Dense(units=n_labels, activation="softmax")(merge)
 
-    model = Model(input_words, out)
-    #model = Model([input_words, input_prefixes, input_suffixes, input_pos], out)
-    model.compile(optimizer=optimizer, loss="categorical_crossentropy", metrics=["accuracy"])
-    #3print(conc_model.summary())
+    #merge = Model([input_words, input_lemmas ,input_pos],  out)
+    cnn_model.compile(optimizer=optimizer, loss="categorical_crossentropy", metrics=["accuracy"])
+    print(cnn_model.summary())
 
-    return model
+    return cnn_model
 
-
-def encode_words(split_data, indexes):
+def encode_words_and_lemmas(split_data, indexes):
     word_dict = indexes['words']
+    lemma_dict = indexes['lemmas']
     max_len = indexes['maxLen']
-    encoded_matrix = []
+    encoded_matrix_words = []
+    encoded_matrix_lemmas = []
     for instances_of_a_sentence in split_data.values():
-        #pos_tags_of_sentence = pos_tag([token[0] for token in instances_of_a_sentence])
-
-        encoded_sentence = []
+        encoded_sentence_word = []
+        encoded_sentence_lemma = []
 
         for idx, instance in enumerate(instances_of_a_sentence[3]):
             # If the sentence is bigger than max_len we need to cut the sentence
             if idx < max_len:
-                word = instance[0]
+                word = instance[0].lower()
+                lemma = instance[-1].lower()
                 if word in word_dict:
-                    encoded_sentence.append(word_dict[word])
+                    encoded_sentence_word.append(word_dict[word])
                 else:  # '<UNK>' : 1
-                    encoded_sentence.append(1)
+                    encoded_sentence_word.append(1)
+                if lemma in lemma_dict:
+                    encoded_sentence_lemma.append(lemma_dict[lemma])
+                else:
+                    encoded_sentence_lemma.append(1)
+
             else:
                 break
-        sent_len = len(encoded_sentence)
-        # Check if we need padding
+
+        # Check if we need padding for words
+        sent_len = len(encoded_sentence_word)
         if max_len - sent_len > 0:
             padding = [0] * (max_len - sent_len)
-            encoded_sentence.extend(padding)
-        encoded_matrix.append(encoded_sentence)
-    return np.array(encoded_matrix)
+            encoded_sentence_word.extend(padding)
+        encoded_matrix_words.append(encoded_sentence_word)
+
+        # Check if we need padding for lemmas
+        sent_len = len(encoded_sentence_lemma)
+        if max_len - sent_len > 0:
+            padding = [0] * (max_len - sent_len)
+            encoded_sentence_lemma.extend(padding)
+        encoded_matrix_lemmas.append(encoded_sentence_lemma)
+
+    return np.array(encoded_matrix_words), np.array(encoded_matrix_lemmas)
 
 def encode_affixes(split_data, indexes) -> tuple:
     # load both dictionaries. Instantiate the lists which will contain all the encoded sentences for
@@ -229,8 +283,6 @@ def encode_affixes(split_data, indexes) -> tuple:
     for instances_of_a_sentence in split_data.values():
         encoded_sentence_suf = []
         encoded_sentence_pref = []
-        # words that do not have the required length or are stopwords will be filtered out.
-        # TODO: (solved) better just put a <UNK>
 
         for idx, instance in enumerate(instances_of_a_sentence):
             # If the sentence is bigger than max_len we need to cut the sentence
@@ -298,7 +350,7 @@ def encode_postags(split_data, indexes):
     max_len = indexes['maxLen']
     encoded_matrix = []
     for instances_of_a_sentence in split_data.values():
-        pos_tags_of_sentence = [analysis[1] for analysis in pos_tag([token[0] for token in instances_of_a_sentence])]
+        pos_tags_of_sentence = [analysis[3] for analysis in instances_of_a_sentence[3]]
         encoded_sentence = []
         for idx, tag in enumerate(pos_tags_of_sentence):
             # If the sentence is bigger than max_len we need to cut the sentence
@@ -348,3 +400,20 @@ def decode_idx_DDI(ddi_encoded):
         return 'advise'
     elif ddi_encoded == 3:
         return 'effect'
+    elif ddi_encoded == 4:
+        return 'int'
+
+# GlOVE
+def create_embedding_matrix(filepath, word_index, embedding_dim, num_reserved = 1):
+    vocab_size = len(word_index) + num_reserved
+    # Adding again a because of reserved index
+    embedding_matrix = np.zeros((vocab_size, embedding_dim))
+
+    with open(filepath) as f:
+        for line in f:
+            word, *vector = line.split()
+            if word in word_index:
+                idx = word_index[word]
+                embedding_matrix[idx] = np.array(vector, dtype=np.float32)[:embedding_dim]
+
+    return embedding_matrix

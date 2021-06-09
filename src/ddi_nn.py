@@ -22,6 +22,15 @@ def learn(train_dir, val_dir, model_name=None):
     train_data = load_data(train_dir)
     val_data = load_data(val_dir)
 
+
+    # filt_data = {}
+    # for sid, sentence in val_data.items():
+    #     analysis_pair = []
+    #     for pair in sentence:
+    #         analysis_pair.append(pair[3])
+    #     filt_data[sid] = analysis_pair
+    # val_data = filt_data
+
     # # TODO in the next line --> calculate the max len between all sentences:
     #max_len = max(len(value) for value in train_data.values())
     # # TODO in the next line --> print a useful histogram of sentences length:
@@ -30,10 +39,11 @@ def learn(train_dir, val_dir, model_name=None):
     indexes = create_indexes(train_data, max_len=75)
     #
     optimizer = optimizers.Adam(learning_rate=0.01)
+    #optimizer = optimizers.sgd(learning_rate=0.01)
     model = build_network(indexes, optimizer)
     #
     words_enc,lemmas_enc = encode_words_and_lemmas(train_data, indexes)
-    prefixes_encoded, suffixes_encoded = encode_affixes(train_data, indexes)
+    #prefixes_encoded, suffixes_encoded = encode_affixes(train_data, indexes)
     pos_enc = encode_postags(train_data, indexes)
     #X_train = [words_enc, lemmas_enc, pos_enc, prefixes_encoded, suffixes_encoded]
     y_train = encode_labels(train_data, indexes)
@@ -50,7 +60,7 @@ def learn(train_dir, val_dir, model_name=None):
     # # TODO note: My pc cannot allow setting steps_per_epochs and validation_steps...
     # # Better focus the training of maximizing the reduction of val loss --> better generalization!
     batch_size = 64
-    epochs = 10
+    epochs = 1
     patience = 3
     es = EarlyStopping(monitor='val_loss', min_delta=0, patience=patience, verbose=1, mode='auto')
     mc = ModelCheckpoint(f'../saved_models_ddi/mc_{model_name}.h5', monitor='val_loss', verbose=1, save_best_only=True, mode='auto')
@@ -83,7 +93,7 @@ def predict(model_name , data_dir):
         Y.append(np.argmax(y))
 
     # extract  entities  and  dump  them to  output  file
-    out_file_path = f'../results_ner/results_{model_name}.txt'
+    out_file_path = f'../results_ddi/results_{model_name}.txt'
 
     output_interactions(test_data , Y, out_file_path)
     # evaluate  using  official  evaluator.
@@ -116,9 +126,13 @@ def create_indexes(train_data, max_len=100):
     prefix_dict = index_dict['prefixes']
     pos_dict = index_dict['pos']
     for instances_of_a_sentence in train_data.values():
-        for elem in instances_of_a_sentence:
-            if not isinstance(elem,list): continue
-            for instance in elem:
+        for pair_descriptor in instances_of_a_sentence:
+            try:
+                pair_descriptor[3]
+            except:
+                continue
+            if not isinstance(pair_descriptor[3],list): continue
+            for instance in pair_descriptor[3]:
                 word = instance[0]
                 lemma = instance[-1]
                 if word not in word_dict:
@@ -193,21 +207,46 @@ def build_network(indexes, optimizer):
     # concatenate embeddings and feed the convolutional model
     ##################BASIC MODEL#################
     cnn_model = Concatenate()([word_emb, lemma_emb, pos_emb])
-    cnn_model = Conv1D(filters=20, kernel_size=4, activation='relu', padding='valid', kernel_initializer=he_normal())(cnn_model)
-    cnn_model = Conv1D(filters=10, kernel_size=4, activation='relu', padding='valid', kernel_initializer=he_normal())(
+
+    #cnn_model = Conv1D(filters=40, kernel_size=4, activation='relu', padding='valid', kernel_initializer=he_normal())(cnn_model)
+    ##################APPROACH#################
+    # filter_sizes = [2,3,4,5]
+    # convs = []
+    # for filter_size in filter_sizes:
+    #     l_conv = Conv1D(filters=128, kernel_size=filter_size, activation='relu', kernel_initializer=he_normal())(
+    #     cnn_model)
+    #     l_pool = GlobalMaxPool1D()(l_conv)
+    #     convs.append(l_pool)
+    # cnn_model = concatenate(convs, axis=1)
+    #
+    # cnn_model = Dropout(0.1)(cnn_model)
+    ############################################
+
+
+
+
+    cnn_model = Conv1D(filters=128, kernel_size=4, activation='relu', padding='valid', kernel_initializer=he_normal())(
         cnn_model)
+    #cnn_model = Conv1D(filters=128, kernel_size=4, activation='relu', padding='valid', kernel_initializer=he_normal())(
+    #    cnn_model)
+    #cnn_model = Conv1D(filters=40, kernel_size=4, activation='relu', padding='valid', kernel_initializer=he_normal())(cnn_model)
+    #cnn_model = GlobalMaxPool1D()(cnn_model)
+    #cnn_model = Conv1D(filters=10, kernel_size=4, activation='relu', padding='valid', kernel_initializer=he_normal())(
+    #    cnn_model)
 
     #cnn_model = Conv1D(filters=25, kernel_size=4, activation='relu', padding='valid', kernel_initializer=he_normal())(
     #    cnn_model)
     #cnn_model = MaxPooling1D(pool_size=2, strides=None, padding='valid',
      #                      input_shape=(max_len, 100))(cnn_model)  # strides=None means strides=pool_size
-    cnn_model = LSTM(units = 20, return_sequences=True, recurrent_dropout=0.1,
-                     dropout=0.1, kernel_initializer=he_normal())(cnn_model)
-    #cnn_model = LSTM(units=40, return_sequences=True, recurrent_dropout=0.1,
+    #cnn_model = LSTM(units = 50, return_sequences=True, recurrent_dropout=0.1,
     #                 dropout=0.1, kernel_initializer=he_normal())(cnn_model)
+    cnn_model = LSTM(units=40, return_sequences=True, recurrent_dropout=0.1,
+                     dropout=0.1, kernel_initializer=he_normal())(cnn_model)
     cnn_model = GlobalMaxPool1D()(cnn_model)
+    cnn_model = Dense(units=50, activation='relu')(cnn_model)
+    #cnn_model = Dropout(0.2)(cnn_model)
     #cnn_model = Dense(units=50, activation='relu')(cnn_model)
-
+    #cnn_model = Dropout(0.2)(cnn_model)
     out = Dense(units=n_labels, activation='softmax')(cnn_model)
 
 
@@ -237,39 +276,44 @@ def encode_words_and_lemmas(split_data, indexes):
     encoded_matrix_words = []
     encoded_matrix_lemmas = []
     for instances_of_a_sentence in split_data.values():
-        encoded_sentence_word = []
-        encoded_sentence_lemma = []
+        if not instances_of_a_sentence: # sentence dont have pair info
+            continue
+        for instance_of_a_pair in instances_of_a_sentence:
+            encoded_sentence_word = []
+            encoded_sentence_lemma = []
 
-        for idx, instance in enumerate(instances_of_a_sentence[3]):
-            # If the sentence is bigger than max_len we need to cut the sentence
-            if idx < max_len:
-                word = instance[0]
-                lemma = instance[-1]
-                if word in word_dict:
-                    encoded_sentence_word.append(word_dict[word])
-                else:  # '<UNK>' : 1
-                    encoded_sentence_word.append(1)
-                if lemma in lemma_dict:
-                    encoded_sentence_lemma.append(lemma_dict[lemma])
+            for idx, instance in enumerate(instance_of_a_pair[3]):
+                # If the sentence is bigger than max_len we need to cut the sentence
+                if idx < max_len:
+                    word = instance[0]
+                    lemma = instance[-1]
+                    if word in word_dict:
+                        encoded_sentence_word.append(word_dict[word])
+                    else:  # '<UNK>' : 1
+                        encoded_sentence_word.append(1)
+                    if lemma in lemma_dict:
+                        encoded_sentence_lemma.append(lemma_dict[lemma])
+                    else:
+                        encoded_sentence_lemma.append(1)
+
                 else:
-                    encoded_sentence_lemma.append(1)
+                    break
+                    # Check if we need padding for words
 
-            else:
-                break
+            sent_len = len(encoded_sentence_word)
+            if max_len - sent_len > 0:
+                padding = [0] * (max_len - sent_len)
+                encoded_sentence_word.extend(padding)
+            encoded_matrix_words.append(encoded_sentence_word)
 
-        # Check if we need padding for words
-        sent_len = len(encoded_sentence_word)
-        if max_len - sent_len > 0:
-            padding = [0] * (max_len - sent_len)
-            encoded_sentence_word.extend(padding)
-        encoded_matrix_words.append(encoded_sentence_word)
+            # Check if we need padding for lemmas
+            sent_len = len(encoded_sentence_lemma)
+            if max_len - sent_len > 0:
+                padding = [0] * (max_len - sent_len)
+                encoded_sentence_lemma.extend(padding)
+            encoded_matrix_lemmas.append(encoded_sentence_lemma)
 
-        # Check if we need padding for lemmas
-        sent_len = len(encoded_sentence_lemma)
-        if max_len - sent_len > 0:
-            padding = [0] * (max_len - sent_len)
-            encoded_sentence_lemma.extend(padding)
-        encoded_matrix_lemmas.append(encoded_sentence_lemma)
+
 
     return np.array(encoded_matrix_words), np.array(encoded_matrix_lemmas)
 
@@ -335,14 +379,19 @@ def encode_labels(split_data, indexes):
     #max_len = indexes['maxLen']
     encoded_labels = []
     for idx, instances_of_a_sentence in enumerate(split_data.values()):
-        ddi = instances_of_a_sentence[2]
-        if True: #idx < max_len:
-            if ddi in label_dict:
-                encoded_labels.append(label_dict[ddi])
-            else:
-                encoded_labels.append(1)
-        #else:
-        #    break
+        if not instances_of_a_sentence: # sentence dont have pair info
+            continue
+        encoded_sentence = []
+        for instance_of_a_pair in instances_of_a_sentence:
+            ddi = instance_of_a_pair[2]
+            if True: #idx < max_len:
+                if ddi in label_dict:
+                    encoded_sentence.append(label_dict[ddi])
+                else:
+                    encoded_sentence.append(1)
+            #else:
+            #    break
+        encoded_labels += encoded_sentence
 
     encoded_label_matrix = np.array(encoded_labels)
     y = [to_categorical(i, num_classes=len(label_dict.values())) for i in encoded_label_matrix]
@@ -353,23 +402,26 @@ def encode_postags(split_data, indexes):
     max_len = indexes['maxLen']
     encoded_matrix = []
     for instances_of_a_sentence in split_data.values():
-        pos_tags_of_sentence = [analysis[3] for analysis in instances_of_a_sentence[3]]
-        encoded_sentence = []
-        for idx, tag in enumerate(pos_tags_of_sentence):
-            # If the sentence is bigger than max_len we need to cut the sentence
-            if idx < max_len:
-                if tag in pos_dict:
-                    encoded_sentence.append(pos_dict[tag])
-                else:  # '<UNK>' : 1
-                    encoded_sentence.append(1)
-            else:
-                break
-        sent_len = len(encoded_sentence)
-        # Check if we need padding
-        if max_len - sent_len > 0:
-            padding = [0] * (max_len - sent_len)
-            encoded_sentence.extend(padding)
-        encoded_matrix.append(encoded_sentence)
+        if not instances_of_a_sentence: # sentence dont have pair info
+            continue
+        for instance_of_a_pair in instances_of_a_sentence:
+            pos_tags_of_sentence = [analysis[3] for analysis in instance_of_a_pair[3]]
+            encoded_sentence = []
+            for idx, tag in enumerate(pos_tags_of_sentence):
+                # If the sentence is bigger than max_len we need to cut the sentence
+                if idx < max_len:
+                    if tag in pos_dict:
+                        encoded_sentence.append(pos_dict[tag])
+                    else:  # '<UNK>' : 1
+                        encoded_sentence.append(1)
+                else:
+                    break
+            sent_len = len(encoded_sentence)
+            # Check if we need padding
+            if max_len - sent_len > 0:
+                padding = [0] * (max_len - sent_len)
+                encoded_sentence.extend(padding)
+            encoded_matrix.append(encoded_sentence)
     return np.array(encoded_matrix)
 
 
@@ -388,7 +440,7 @@ def load_model_and_indexes(model_name):
 def output_interactions(test_data , y_pred, out_file_path):
     out_file = open(out_file_path, "w+")
     for idx, instance in enumerate(test_data.items()):
-        sid, id_e1, id_e2 = instance[0], instance[1][0], instance[1][1]
+        sid, id_e1, id_e2 = instance[0], instance[1][0][0], instance[1][0][1]
         ddi_type = decode_idx_DDI(y_pred[idx])
 
         if ddi_type is not None and ddi_type != "null":

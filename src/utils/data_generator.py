@@ -137,6 +137,7 @@ class DatasetGenerator:
                         tokens_plus_info = self._add_pos_and_lemmas(tokens)
                     # for each pair of entities, decide whether it is DDI and its type
                     pairs = s.getElementsByTagName("pair")
+                    pair_analysis = []
                     for p in pairs:
                         # get ground truth
                         ddi = p.attributes["ddi"].value
@@ -146,11 +147,12 @@ class DatasetGenerator:
                         id_e2 = p.attributes["e2"].value
                         format = id_e1 + "\t" + id_e2 + "\t" + dditype
                         features = self.prepare_sentence_features(id_e1, id_e2, entities, tokens_plus_info)
-                        dataset[sid] = [id_e1, id_e2, dditype, features]
+                        pair_analysis.append([id_e1, id_e2, dditype, features])
                         #dataset.append((sid, id_e1, id_e2, dditype, features))
                         #print(sid, format, "\t".join(str(features)), sep="\t", file=file)
                         #format = entities[id_e1][0] + "\t" + entities[id_e1][1][0] + "\t" + entities[id_e1][1][1] + "\t" + dditype
                         print(sid + '\t' + id_e1 + '\t' + id_e2 + '\t' + dditype + '\t' + str(features), file=file)
+                    dataset[sid] = pair_analysis
                 index += 1
                 print("{:.1%}".format(index / number_of_files))
         return dataset
@@ -212,7 +214,10 @@ class DatasetGenerator:
                     if content != "":
                         sid, id_e1, id_e2, tag, tokenized_sentence = content.split('\t')
                         if sid not in dataset:
-                            dataset[sid] = [id_e1, id_e2, tag, ast.literal_eval(tokenized_sentence)]
+                            dataset[sid] = [[id_e1, id_e2, tag, ast.literal_eval(tokenized_sentence)]]
+                        else:
+                            dataset[sid].append([id_e1, id_e2, tag, ast.literal_eval(tokenized_sentence)])
+
             return dataset
         else:
             print("File not found.")

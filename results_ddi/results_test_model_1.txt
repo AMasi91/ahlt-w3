@@ -1,0 +1,8 @@
+DDI-DrugBank.d416.s3|DDI-DrugBank.d416.s3.e0|DDI-DrugBank.d416.s3.e1|effect
+DDI-MedLine.d100.s5|DDI-MedLine.d100.s5.e0|DDI-MedLine.d100.s5.e1|effect
+DDI-DrugBank.d78.s11|DDI-DrugBank.d78.s11.e0|DDI-DrugBank.d78.s11.e1|effect
+DDI-DrugBank.d97.s3|DDI-DrugBank.d97.s3.e0|DDI-DrugBank.d97.s3.e1|effect
+DDI-DrugBank.d97.s4|DDI-DrugBank.d97.s4.e0|DDI-DrugBank.d97.s4.e1|effect
+DDI-DrugBank.d124.s15|DDI-DrugBank.d124.s15.e0|DDI-DrugBank.d124.s15.e1|effect
+DDI-DrugBank.d269.s5|DDI-DrugBank.d269.s5.e0|DDI-DrugBank.d269.s5.e1|effect
+DDI-DrugBank.d328.s23|DDI-DrugBank.d328.s23.e0|DDI-DrugBank.d328.s23.e1|effect

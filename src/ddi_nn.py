@@ -19,8 +19,8 @@ sw = stopwords.words('english')
 
 
 def learn(train_dir, val_dir, model_name=None):
-    train_data = load_data(train_dir)
-    val_data = load_data(val_dir)
+    train_data = {k:v for k,v in load_data(train_dir).items() if len(v)>0}
+    val_data = {k:v for k,v in load_data(val_dir).items() if len(v)>0}
 
 
     # filt_data = {}

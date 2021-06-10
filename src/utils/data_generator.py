@@ -124,7 +124,7 @@ class DatasetGenerator:
                 for s in sentences:
                     sid = s.attributes["id"].value  # get sentence id
                     # get sentence text # load sentence ground truth entities
-                    sentence_text = s.attributes["text"].value
+                    sentence_text = s.attributes["text"].value.replace("/", " ")
                     entities = {}
                     ents = s.getElementsByTagName("entity")
                     for e in ents:
@@ -157,14 +157,54 @@ class DatasetGenerator:
                 print("{:.1%}".format(index / number_of_files))
         return dataset
 
+    # def check_partial_match(self, entity_token, interacting_entities) -> tuple:
+    #     token_name = entity_token[0]
+    #     groundtruth_names = [elem[0] for elem in interacting_entities]
+    #     for name in groundtruth_names:
+    #         if token_name in name:
+    #             return True, name
+    #     return False, None
+    #
+    # def merge_token(self, sentence_features, interacting_entities):
+    #     groundtruth_names = [elem[0] for elem in interacting_entities]
+    #     merged_sent_feat = []
+    #     for idx,token in enumerate(sentence_features):
+    #         if token[0] in groundtruth_names:
+    #             continue
+    #         is_partial_match, first_entity = self.check_partial_match(token, interacting_entities)
+    #         elif is_partial_match:
+    #             second_entity = self.check_partial_match(sentence_features[idx+1], interacting_entities)[1]
+    #             if first_entity == second_entity:
+    #                 merged_sent_feat += [elem for elem in interacting_entities if elem[0]==first_entity]
+    #                 continue
+    #         merged_sent_feat.append(token)
+
+
+
+
+
+
+
+
     def prepare_sentence_features(self, id_e1, id_e2, entities, tokens_plus_info) -> list:
         interacting_entities = [entities[id_e1], entities[id_e2]]
         non_interacting_entities = [entity for entity in entities.values() if entity not in interacting_entities]
         mask = {0:'<DRUG_OTHER>', 1:'<DRUG1>', 2:'<DRUG2>'}
         sentence_features = []
         # TODO: masks now only mask lemma and word. Should pos tag as well? => now masking POS
+        merged_token = []
         for token_info in tokens_plus_info:
-            entity_token = (token_info[0].split('-')[0],[str(token_info[1]), str(token_info[2])])
+            entity_token = (token_info[0],[str(token_info[1]), str(token_info[2])])
+            name_entity_token = entity_token[0]
+            names_interacting_entities = [token[0].split() for token in interacting_entities]
+            names_noninteracting_entities = [token[0].split() for token in non_interacting_entities]
+            name_interacting_entity = []
+            name_noninteracting_entity = []
+            for lista in names_interacting_entities:
+                name_interacting_entity += lista
+            for lista in names_noninteracting_entities:
+                name_noninteracting_entity += lista
+            #names_entities = [[lista[i] for i in range(len(lista))] for lista in names_entities]
             if entity_token in interacting_entities:
                 index = interacting_entities.index(entity_token)
                 if index == 0:
@@ -173,6 +213,32 @@ class DatasetGenerator:
                     token_info = (mask[2],token_info[1],token_info[2],mask[2], mask[2])
             elif entity_token in non_interacting_entities:
                 token_info = (mask[0],token_info[1],token_info[2],mask[0], mask[0])
+            elif name_entity_token in name_interacting_entity:
+                merged_token.append(entity_token)
+                if len(merged_token) == 2:
+                    token_info = (merged_token[0][0] + " " +merged_token[1][0], merged_token[0][1][0],
+                                  merged_token[1][1][1],merged_token[0][0] + " " +merged_token[1][0])
+                    merged_token = []
+
+                    if (token_info[0],[token_info[1], token_info[2]]) in interacting_entities:
+                        index = interacting_entities.index((token_info[0],[token_info[1], token_info[2]]))
+                        if index == 0:
+                            token_info = (mask[1], token_info[1], token_info[2], mask[1], mask[1])
+                        else:
+                            token_info = (mask[2], token_info[1], token_info[2], mask[2], mask[2])
+                    elif (token_info[0],[token_info[1], token_info[2]]) in non_interacting_entities:
+                        token_info = (mask[0], token_info[1], token_info[2], mask[0], mask[0])
+                else: continue
+            elif name_entity_token in name_noninteracting_entity:
+                merged_token.append(entity_token)
+                if len(merged_token) == 2:
+                    token_info = (merged_token[0][0] + " " +merged_token[1][0], merged_token[0][1][0],
+                                  merged_token[1][1][1],merged_token[0][0] + " " +merged_token[1][0])
+                    merged_token = []
+                    if (token_info[0],[token_info[1], token_info[2]]) in non_interacting_entities:
+                            token_info = (mask[0], token_info[1], token_info[2], mask[0], mask[0])
+                else: continue
+
             sentence_features.append(token_info)
         return sentence_features
 

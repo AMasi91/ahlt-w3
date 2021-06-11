@@ -193,16 +193,16 @@ def build_network(indexes, optimizer):
     # concatenate embeddings and feed the convolutional model
     ##################BASIC MODEL#################
     cnn_model = Concatenate()([word_emb, lemma_emb, pos_emb])
-    cnn_model = Conv1D(filters=20, kernel_size=4, activation='relu', padding='valid', kernel_initializer=he_normal())(cnn_model)
-    cnn_model = Conv1D(filters=10, kernel_size=4, activation='relu', padding='valid', kernel_initializer=he_normal())(
-        cnn_model)
+    cnn_model = Conv1D(filters=75, kernel_size=4, activation='relu', padding='valid', kernel_initializer=he_normal())(cnn_model)
+    #cnn_model = Conv1D(filters=10, kernel_size=4, activation='relu', padding='valid', kernel_initializer=he_normal())(
+    #    cnn_model)
 
     #cnn_model = Conv1D(filters=25, kernel_size=4, activation='relu', padding='valid', kernel_initializer=he_normal())(
     #    cnn_model)
     #cnn_model = MaxPooling1D(pool_size=2, strides=None, padding='valid',
      #                      input_shape=(max_len, 100))(cnn_model)  # strides=None means strides=pool_size
-    cnn_model = LSTM(units = 20, return_sequences=True, recurrent_dropout=0.1,
-                     dropout=0.1, kernel_initializer=he_normal())(cnn_model)
+    #cnn_model = LSTM(units = 20, return_sequences=True, recurrent_dropout=0.1,
+    #                 dropout=0.1, kernel_initializer=he_normal())(cnn_model)
     #cnn_model = LSTM(units=40, return_sequences=True, recurrent_dropout=0.1,
     #                 dropout=0.1, kernel_initializer=he_normal())(cnn_model)
     cnn_model = GlobalMaxPool1D()(cnn_model)

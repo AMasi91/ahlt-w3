@@ -147,86 +147,80 @@ def create_indexes(train_data, max_len=100):
     return index_dict
 
 def build_network(indexes, optimizer):
+    #Define lengths for the embeddings#
     n_words = len(indexes['words'])
     n_labels = len(indexes['labels'])
     n_pos = len(indexes['pos'])
     n_lemmas = len(indexes['lemmas'])
-    n_suffixes = len(indexes['suffixes'])
-    n_prefixes = len(indexes['prefixes'])
+    #n_suffixes = len(indexes['suffixes'])
+    #n_prefixes = len(indexes['prefixes'])
 
     max_len = indexes['maxLen']
 
     word_embedding_size = 150
     pos_embedding_size = 25
     lemma_embedding_size = 110
-    prefixes_embedding_size = 200
-    suffixes_embedding_size = 200
-    total_size = word_embedding_size + pos_embedding_size + lemma_embedding_size + 400
+    #prefixes_embedding_size = 200
+    #suffixes_embedding_size = 200
+
 
     # 3 input layers, one for each feature
     input_words = Input(shape=(max_len,))
     input_lemmas = Input(shape=(max_len,))
     input_pos = Input(shape=(max_len,))
-    input_pre = Input(shape=(max_len,))
-    input_suf = Input(shape=(max_len,))
+    #input_pre = Input(shape=(max_len,))
+    #input_suf = Input(shape=(max_len,))
 
+    # EMBEDDINGS
+    ############################# 3 embeddings using GLOVE############################################################
+    #emb_word_mat = create_embedding_matrix('../resources/glove.6B.200d.txt', indexes['words'], 150, num_reserved=2)
+    #emb_lemma_mat = create_embedding_matrix('../resources/glove.6B.200d.txt', indexes['lemmas'], 110, num_reserved=2)
+    #emb_pos_mat = create_embedding_matrix('../resources/glove.6B.50d.txt', indexes['pos'], 25, num_reserved=2)
+    # word_emb = Embedding(input_dim=n_words+2,  output_dim=word_embedding_size, input_length=max_len,
+    #                     embeddings_initializer=Constant(emb_word_mat),trainable=False,)(input_words)
+    # lemma_emb = Embedding(input_dim=n_lemmas+2, output_dim=lemma_embedding_size, input_length=max_len,
+    #                      embeddings_initializer = Constant(emb_lemma_mat), trainable = False,)(input_lemmas)
+    # pos_emb = Embedding(input_dim=n_pos+2, output_dim=pos_embedding_size, input_length=max_len,
+    #                    embeddings_initializer = Constant(emb_pos_mat), trainable = False,)(input_pos)
+    ###################################################################################################################
 
-    # 3 embeddings (one for each input)
-    emb_word_mat = create_embedding_matrix('../resources/glove.6B.200d.txt', indexes['words'], 150, num_reserved=2)
-    emb_lemma_mat = create_embedding_matrix('../resources/glove.6B.200d.txt', indexes['lemmas'], 110, num_reserved=2)
-    emb_pos_mat = create_embedding_matrix('../resources/glove.6B.50d.txt', indexes['pos'], 25, num_reserved=2)
-
+    ######################## 3 embeddings using plain trainable embeddings#############################################
     word_emb = Embedding(input_dim=n_words, output_dim=word_embedding_size, input_length=max_len)(input_words)
     lemma_emb = Embedding(input_dim=n_lemmas, output_dim=lemma_embedding_size, input_length=max_len)(input_lemmas)
     pos_emb = Embedding(input_dim=n_pos, output_dim=pos_embedding_size, input_length=max_len)(input_pos)
     #pref_emb = Embedding(input_dim=n_prefixes, output_dim=prefixes_embedding_size, input_length=max_len)(input_pre)
     #suff_emb = Embedding(input_dim=n_suffixes, output_dim=suffixes_embedding_size, input_length=max_len)(input_suf)
+    ##################################################################################################################
 
-    #word_emb = Embedding(input_dim=n_words+2,  output_dim=word_embedding_size, input_length=max_len,
-    #                     embeddings_initializer=Constant(emb_word_mat),trainable=False,)(input_words)
-    #lemma_emb = Embedding(input_dim=n_lemmas+2, output_dim=lemma_embedding_size, input_length=max_len,
-    #                      embeddings_initializer = Constant(emb_lemma_mat), trainable = False,)(input_lemmas)
-    #pos_emb = Embedding(input_dim=n_pos+2, output_dim=pos_embedding_size, input_length=max_len,
-    #                    embeddings_initializer = Constant(emb_pos_mat), trainable = False,)(input_pos)
-    #aux = concatenate([word_emb], [lemma_emb])
-    #cnn_model = concatenate(aux, [pos_emb])
-    # concatenate embeddings and feed the convolutional model
     ##################BASIC MODEL#################
-    cnn_model = Concatenate()([word_emb, lemma_emb, pos_emb])
-    cnn_model = Conv1D(filters=75, kernel_size=4, activation='relu', padding='valid', kernel_initializer=he_normal())(cnn_model)
-    #cnn_model = Conv1D(filters=10, kernel_size=4, activation='relu', padding='valid', kernel_initializer=he_normal())(
-    #    cnn_model)
-
-    #cnn_model = Conv1D(filters=25, kernel_size=4, activation='relu', padding='valid', kernel_initializer=he_normal())(
-    #    cnn_model)
-    #cnn_model = MaxPooling1D(pool_size=2, strides=None, padding='valid',
-     #                      input_shape=(max_len, 100))(cnn_model)  # strides=None means strides=pool_size
+    #cnn_model = Concatenate()([word_emb, lemma_emb, pos_emb])
+    #cnn_model = Conv1D(filters=75, kernel_size=4, activation='relu', padding='valid', kernel_initializer=he_normal())(cnn_model)
     #cnn_model = LSTM(units = 20, return_sequences=True, recurrent_dropout=0.1,
     #                 dropout=0.1, kernel_initializer=he_normal())(cnn_model)
-    #cnn_model = LSTM(units=40, return_sequences=True, recurrent_dropout=0.1,
-    #                 dropout=0.1, kernel_initializer=he_normal())(cnn_model)
-    cnn_model = GlobalMaxPool1D()(cnn_model)
+    #cnn_model = GlobalMaxPool1D()(cnn_model)
     #cnn_model = Dense(units=50, activation='relu')(cnn_model)
+    ##############################################
 
+    ##################MORE COMPLEX MODEL#################
+    cnn_model = Concatenate()([word_emb, lemma_emb, pos_emb])
+    filter_sizes = [2,3,4,5]
+    convs = []
+    for filter_size in filter_sizes:
+        l_conv = Conv1D(filters=75, kernel_size=filter_size, activation='relu', kernel_initializer=he_normal())(
+        cnn_model)
+        l_pool = GlobalMaxPool1D()(l_conv)
+        convs.append(l_pool)
+    cnn_model = concatenate(convs, axis=1)
+
+    cnn_model = Dropout(0.1)(cnn_model)
+    ############################################
+
+    ################################## CLASSIFY AND COMPILE###########################################################
     out = Dense(units=n_labels, activation='softmax')(cnn_model)
-
-
     cnn_model = Model([input_words, input_lemmas, input_pos], out)
-    #lstm_model = Concatenate()([word_emb, lemma_emb, pos_emb])
-    #lstm_model = LSTM(word_embedding_size, activation='relu', return_sequences=True)(lstm_model)
-    #lstm_model = LSTM(word_embedding_size, activation='relu', return_sequences=True)(lstm_model)
-
-    #lstm_model = LSTM(word_embedding_size, activation='relu', return_sequences=True)(lstm_model)
-    #lstm_model = Flatten()(lstm_model)
-
-    #merge = Concatenate()([cnn_model, lstm_model])
-    #merge = Dense(units=100, activation='relu')(merge)
-    #merge = Dense(units=50, activation='relu')(merge)
-    #out = Dense(units=n_labels, activation="softmax")(merge)
-
-    #merge = Model([input_words, input_lemmas ,input_pos],  out)
     cnn_model.compile(optimizer=optimizer, loss="categorical_crossentropy", metrics=["accuracy"])
     print(cnn_model.summary())
+    ##################################################################################################################
 
     return cnn_model
 

@@ -27,6 +27,7 @@ class DatasetGenerator:
         self.split_path = split_path
         self.task = task
         self.out_path_dict = generate_output_path(self.split_path, task)
+        self.mask = {0: '<DRUG_OTHER>', 1: '<DRUG1>', 2: '<DRUG2>'}
 
     def get_dataset_split(self) -> dict:
         if self.task == 'ner':
@@ -144,12 +145,8 @@ class DatasetGenerator:
                         dditype = p.attributes["type"].value if ddi == "true" else "null"
                         id_e1 = p.attributes["e1"].value
                         id_e2 = p.attributes["e2"].value
-                        format = id_e1 + "\t" + id_e2 + "\t" + dditype
                         features = self.prepare_sentence_features(id_e1, id_e2, entities, tokens_plus_info)
                         dataset[sid] = [id_e1, id_e2, dditype, features]
-                        #dataset.append((sid, id_e1, id_e2, dditype, features))
-                        #print(sid, format, "\t".join(str(features)), sep="\t", file=file)
-                        #format = entities[id_e1][0] + "\t" + entities[id_e1][1][0] + "\t" + entities[id_e1][1][1] + "\t" + dditype
                         print(sid + '\t' + id_e1 + '\t' + id_e2 + '\t' + dditype + '\t' + str(features), file=file)
                 index += 1
                 print("{:.1%}".format(index / number_of_files))
@@ -157,22 +154,36 @@ class DatasetGenerator:
 
     def prepare_sentence_features(self, id_e1, id_e2, entities, tokens_plus_info) -> list:
         interacting_entities = [entities[id_e1], entities[id_e2]]
-        non_interacting_entities = [entity for entity in entities.values() if entity not in interacting_entities]
-        mask = {0:'<DRUG_OTHER>', 1:'<DRUG1>', 2:'<DRUG2>'}
+        entity_1 = self.extract_offsets(entities[id_e1])
+        entity_2 = self.extract_offsets(entities[id_e2])
+        non_interacting_entities = [self.extract_offsets(entity) for entity in entities.values()
+                                    if entity not in interacting_entities]
+
         sentence_features = []
-        # TODO: masks now only mask lemma and word. Should pos tag as well? => now masking POS
         for token_info in tokens_plus_info:
-            entity_token = (token_info[0].split('-')[0],[str(token_info[1]), str(token_info[2])])
-            if entity_token in interacting_entities:
-                index = interacting_entities.index(entity_token)
-                if index == 0:
-                    token_info = (mask[1],token_info[1],token_info[2],mask[1], mask[1])
-                else:
-                    token_info = (mask[2],token_info[1],token_info[2],mask[2], mask[2])
-            elif entity_token in non_interacting_entities:
-                token_info = (mask[0],token_info[1],token_info[2],mask[0], mask[0])
+            token_start = str(token_info[1])
+            if token_start == entity_1[0]:
+                token_info = (self.mask[1], token_info[1], token_info[2], self.mask[1], self.mask[1])
+
+            elif token_start == entity_2[0]:
+                token_info = (self.mask[2], token_info[1], token_info[2], self.mask[2], self.mask[2])
+
+            elif any(ent[0] == token_start for ent in non_interacting_entities):
+                token_info = (self.mask[0], token_info[1], token_info[2], self.mask[0], self.mask[0])
             sentence_features.append(token_info)
         return sentence_features
+
+    def extract_offsets(self, entity):
+        entity_offset = entity[1]
+        if len(entity_offset) > 2:
+            offsets = ''
+            # ['29', '56;77', '100']
+            for e in entity_offset:
+                offsets += e + ";"  # 29;56;77;100
+            offsets_list = offsets.split(";")[:-1]  # ['29', '56', '77', '100']
+        else:
+            offsets_list = entity_offset
+        return offsets_list
 
     def _add_pos_and_lemmas(self, tokens):
         just_tokens = [t for t, start, end in tokens]
@@ -199,8 +210,6 @@ class DatasetGenerator:
             return wnl.lemmatize(word_and_tag[0], wn.ADV)
         return word_and_tag[0]
 
-
-
     def _read_file_ddi(self) -> dict:
         out_file_path = self.out_path_dict
         if os.path.isfile(out_file_path):
@@ -212,7 +221,9 @@ class DatasetGenerator:
                     if content != "":
                         sid, id_e1, id_e2, tag, tokenized_sentence = content.split('\t')
                         if sid not in dataset:
-                            dataset[sid] = [id_e1, id_e2, tag, ast.literal_eval(tokenized_sentence)]
+                            dataset[sid] = [[id_e1, id_e2, tag, ast.literal_eval(tokenized_sentence)]]
+                        else:
+                            dataset[sid].append([id_e1, id_e2, tag, ast.literal_eval(tokenized_sentence)])
             return dataset
         else:
             print("File not found.")
